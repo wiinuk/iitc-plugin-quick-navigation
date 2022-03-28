@@ -25,6 +25,7 @@
   "homepage": "https://github.com/wiinuk/iitc-plugin-quick-jump#readme",
   "devDependencies": {
     "@types/jest": "^27.0.3",
+    "@types/tampermonkey": "^4.0.5",
     "@typescript-eslint/eslint-plugin": "^5.8.0",
     "@typescript-eslint/experimental-utils": "^5.9.0",
     "@typescript-eslint/parser": "^5.8.0",
