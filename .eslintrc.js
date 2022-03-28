@@ -39,7 +39,7 @@ const config = {
         "@typescript-eslint/no-empty-function": "warn",
         "@typescript-eslint/no-unused-vars": [
             "warn",
-            { varsIgnorePattern: "^_" },
+            { varsIgnorePattern: "^_", argsIgnorePattern: "^_" },
         ],
         "object-shorthand": "warn",
         "no-useless-rename": "warn",
