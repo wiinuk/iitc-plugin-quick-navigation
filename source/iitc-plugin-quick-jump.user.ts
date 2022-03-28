@@ -6,7 +6,7 @@
 // @downloadURL  https://github.com/wiinuk/iitc-plugin-quick-jump/raw/master/iitc-plugin-quick-jump.user.js
 // @updateURL    https://github.com/wiinuk/iitc-plugin-quick-jump/raw/master/iitc-plugin-quick-jump.user.js
 // @homepageURL  https://github.com/wiinuk/iitc-plugin-quick-jump
-// @version      0.1.0
+// @version      0.1.1
 // @description  Add the ability to move to specified coordinates.
 // @author       Wiinuk
 // @include      https://*.ingress.com/intel*
