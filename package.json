@@ -46,6 +46,7 @@
     "fsevents": "^2.3.2"
   },
   "dependencies": {
+    "exifreader": "^4.5.0",
     "tslib": "^2.3.1"
   }
 }
