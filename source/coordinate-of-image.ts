@@ -1,5 +1,6 @@
 // spell-checker: ignore exif
 import * as ExifReader from "exifreader";
+import { AsyncOptions, ignore, newAbortError } from "./standard-extensions";
 
 function normalizeDMS(value: number, isNegative: boolean) {
     return value * (isNegative ? -1 : 1);
@@ -11,34 +12,38 @@ function parseDMS(numbers: ExifReader.NumberArrayTag | undefined) {
     }
     return parseFloat(description);
 }
-interface Progress<T> {
-    (value: T): void;
-}
-interface AsyncOptions {
-    signal?: AbortSignal;
-    progress?: Progress<ProgressEvent>;
-}
 function readFileAsArrayBuffer(
     file: File,
     options?: Readonly<AsyncOptions>
 ): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
+        const signal = options?.signal;
+        if (signal?.aborted) {
+            return reject(newAbortError());
+        }
+        const onAbort: () => void = signal
+            ? () => {
+                  reader.abort();
+                  reject(newAbortError());
+              }
+            : ignore;
+
+        signal?.addEventListener("abort", onAbort);
+
         const progress = options?.progress ?? null;
         const reader = new FileReader();
         reader.onloadstart = progress;
         reader.onprogress = progress;
         reader.onload = (e) => {
             progress?.(e);
+            signal?.removeEventListener("abort", onAbort);
             resolve(reader.result as ArrayBuffer);
         };
         reader.onerror = (e) => {
             progress?.(e);
+            signal?.removeEventListener("abort", onAbort);
             reject(e);
         };
-        options?.signal?.addEventListener("abort", (e) => {
-            reader.abort();
-            reject(e);
-        });
         reader.onabort = progress;
         reader.readAsArrayBuffer(file);
     });

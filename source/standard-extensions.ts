@@ -17,13 +17,20 @@ export function ignore<Ts extends unknown[]>(..._args: Ts[]): void {
     /* 引数を無視する関数 */
 }
 
+export interface Progress<T> {
+    (value: T): void;
+}
+export interface AsyncOptions {
+    signal?: AbortSignal;
+    progress?: Progress<ProgressEvent>;
+}
 class AbortError extends Error {
     override name = "AbortError";
     constructor(message: string) {
         super(message);
     }
 }
-function newAbortError(message = "The operation was aborted.") {
+export function newAbortError(message = "The operation was aborted.") {
     if (typeof DOMException === "function") {
         return new DOMException(message, "AbortError");
     } else {

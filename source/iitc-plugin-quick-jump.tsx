@@ -2,7 +2,7 @@
 import { coordinateOfImage } from "./coordinate-of-image";
 import { addStyle, waitElementLoaded } from "./document-extensions";
 import { lonLatToAddress } from "./gsi-reverse-geocoder";
-import { cancelToReject, sleep } from "./standard-extensions";
+import { AsyncOptions, cancelToReject, sleep } from "./standard-extensions";
 
 function handleAsyncError(promise: Promise<void>) {
     promise.catch((error) => console.error(error));
@@ -83,7 +83,7 @@ const css = `
 
 async function searchCoordinate(
     searchText: string,
-    _option: { signal: AbortSignal }
+    _option?: Readonly<AsyncOptions>
 ) {
     const match = searchText.match(
         /(?<latitude>\d+(\.\d*)?)(\s+|\s*,\s*)(?<longitude>\d+(\.\d*)?)/
@@ -132,20 +132,26 @@ function put(
         })()
     );
 }
-async function searchAndMoveToCoordinate(
+async function waitAndExecuteCommand(
     view: View,
-    { signal }: { signal: AbortSignal }
+    options?: Readonly<AsyncOptions>
 ) {
-    const { inputWaitInterval, searchInput, parentMap } = view;
+    const { inputWaitInterval, searchInput } = view;
 
     // しばらく待ってから
-    await sleep(inputWaitInterval, { signal });
+    await sleep(inputWaitInterval, options);
 
     // 最後のテキストボックスの値を元に座標を検索
     const { value } = searchInput;
-    const coordinate = await searchCoordinate(value, {
-        signal,
-    });
+    return executeCommand(view, value, options);
+}
+async function executeCommand(
+    view: View,
+    value: string,
+    options?: Readonly<AsyncOptions>
+) {
+    const { parentMap } = view;
+    const coordinate = await searchCoordinate(value, options);
 
     if (!coordinate) {
         return put(view, `${value} の座標が見つかりませんでした。`);
@@ -168,7 +174,7 @@ function createAsyncCancelScope() {
 }
 class Terminal extends window.L.Control {
     private _view?: View;
-    constructor(private _settings: Settings, options: L.ControlOptions) {
+    constructor(options: L.ControlOptions, private _settings: Settings) {
         super(options);
     }
     override onAdd(parentMap: L.Map) {
@@ -200,7 +206,7 @@ class Terminal extends window.L.Control {
         const searchBarHandler = createAsyncCancelScope();
         function startSearch(inputWaitInterval: number) {
             searchBarHandler((signal) =>
-                searchAndMoveToCoordinate(
+                waitAndExecuteCommand(
                     { ...view, inputWaitInterval },
                     { signal }
                 )
@@ -340,11 +346,11 @@ async function asyncMain() {
     addStyle(css);
 
     const terminal = new Terminal(
+        { position: "bottomleft" },
         {
             inputWaitInterval: 3000,
             locationUpdateWaitInterval: 3000,
-        },
-        { position: "bottomleft" }
+        }
     ).addTo(window.map);
 
     new DropZone(terminal, { position: "bottomleft" }).addTo(window.map);
