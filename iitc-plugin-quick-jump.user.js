@@ -194,8 +194,5096 @@ _option) {
 }
 var jsx = jsxs;
 
-;// CONCATENATED MODULE: ./source/document-extensions.ts
-var document_extensions_read = (undefined && undefined.__read) || function (o, n) {
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/utils.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+function getStringFromDataView(dataView, offset, length) {
+    const chars = [];
+    for (let i = 0; i < length && offset + i < dataView.byteLength; i++) {
+        chars.push(dataView.getUint8(offset + i));
+    }
+    return getStringValueFromArray(chars);
+}
+
+function getUnicodeStringFromDataView(dataView, offset, length) {
+    const chars = [];
+    for (let i = 0; i < length && offset + i < dataView.byteLength; i += 2) {
+        chars.push(dataView.getUint16(offset + i));
+    }
+    return getStringValueFromArray(chars);
+}
+
+function getStringValueFromArray(charArray) {
+    return charArray.map((charCode) => String.fromCharCode(charCode)).join('');
+}
+
+function getCharacterArray(string) {
+    return string.split('').map((character) => character.charCodeAt(0));
+}
+
+function objectAssign() {
+    for (let i = 1; i < arguments.length; i++) {
+        for (const property in arguments[i]) {
+            arguments[0][property] = arguments[i][property];
+        }
+    }
+
+    return arguments[0];
+}
+
+function deferInit(object, key, initializer) {
+    let initialized = false;
+    Object.defineProperty(object, key, {
+        get() {
+            if (!initialized) {
+                initialized = true;
+                Object.defineProperty(object, key, {
+                    configurable: true,
+                    enumerable: true,
+                    value: initializer.apply(object),
+                    writable: true
+                });
+            }
+            return object[key];
+        },
+        configurable: true,
+        enumerable: true
+    });
+}
+
+function getBase64Image(image) {
+    if (typeof btoa !== 'undefined') {
+        // IE11- does not implement reduce on the Uint8Array prototype.
+        return btoa(Array.prototype.reduce.call(new Uint8Array(image), (data, byte) => data + String.fromCharCode(byte), ''));
+    }
+    if (typeof Buffer === 'undefined') {
+        return undefined;
+    }
+    if (typeof Buffer.from !== undefined) { // eslint-disable-line no-undef
+        return Buffer.from(image).toString('base64'); // eslint-disable-line no-undef
+    }
+    return (new Buffer(image)).toString('base64'); // eslint-disable-line no-undef
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/dataview.js
+class dataview_DataView {
+    constructor(buffer) {
+        if (bufferTypeIsUnsupported(buffer)) {
+            throw new Error('DataView: Passed buffer type is unsupported.');
+        }
+
+        this.buffer = buffer;
+        this.byteLength = this.buffer.length;
+    }
+
+    getUint8(offset) {
+        return this.buffer.readUInt8(offset);
+    }
+
+    getUint16(offset, littleEndian) {
+        if (littleEndian) {
+            return this.buffer.readUInt16LE(offset);
+        }
+        return this.buffer.readUInt16BE(offset);
+    }
+
+    getUint32(offset, littleEndian) {
+        if (littleEndian) {
+            return this.buffer.readUInt32LE(offset);
+        }
+        return this.buffer.readUInt32BE(offset);
+    }
+
+    getInt32(offset, littleEndian) {
+        if (littleEndian) {
+            return this.buffer.readInt32LE(offset);
+        }
+        return this.buffer.readInt32BE(offset);
+    }
+}
+
+function bufferTypeIsUnsupported(buffer) {
+    return typeof buffer !== 'object'
+        || buffer.length === undefined
+        || buffer.readUInt8 === undefined
+        || buffer.readUInt16LE === undefined
+        || buffer.readUInt16BE === undefined
+        || buffer.readUInt32LE === undefined
+        || buffer.readUInt32BE === undefined
+        || buffer.readInt32LE === undefined
+        || buffer.readInt32BE === undefined;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/constants.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* harmony default export */ const constants = ({
+    USE_FILE: true,
+    USE_JFIF: true,
+    USE_PNG_FILE: true,
+    USE_EXIF: true,
+    USE_IPTC: true,
+    USE_XMP: true,
+    USE_ICC: true,
+    USE_MPF: true,
+    USE_THUMBNAIL: true,
+    USE_TIFF: true,
+    USE_JPEG: true,
+    USE_PNG: true,
+    USE_HEIC: true,
+    USE_WEBP: true
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names-utils.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+function getStringValue(value) {
+    return value.map((charCode) => String.fromCharCode(charCode)).join('');
+}
+
+function getEncodedString(value) {
+    if (value.length >= 8) {
+        const encoding = getStringValue(value.slice(0, 8));
+
+        if (encoding === 'ASCII\x00\x00\x00') {
+            return getStringValue(value.slice(8));
+        } else if (encoding === 'JIS\x00\x00\x00\x00\x00') {
+            return '[JIS encoded text]';
+        } else if (encoding === 'UNICODE\x00') {
+            return '[Unicode encoded text]';
+        } else if (encoding === '\x00\x00\x00\x00\x00\x00\x00\x00') {
+            return '[Undefined encoding]';
+        }
+    }
+
+    return 'Undefined';
+}
+
+function getCalculatedGpsValue(value) {
+    return (value[0][0] / value[0][1]) + (value[1][0] / value[1][1]) / 60 + (value[2][0] / value[2][1]) / 3600;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/byte-order.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+const LITTLE_ENDIAN = 0x4949;
+const BIG_ENDIAN = 0x4d4d;
+
+/* harmony default export */ const byte_order = ({
+    BIG_ENDIAN,
+    LITTLE_ENDIAN,
+    getByteOrder
+});
+
+function getByteOrder(dataView, tiffHeaderOffset) {
+    if (dataView.getUint16(tiffHeaderOffset) === LITTLE_ENDIAN) {
+        return LITTLE_ENDIAN;
+    } else if (dataView.getUint16(tiffHeaderOffset) === BIG_ENDIAN) {
+        return BIG_ENDIAN;
+    }
+    throw new Error('Illegal byte order value. Faulty image.');
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/image-header-tiff.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+/* harmony default export */ const image_header_tiff = ({
+    isTiffFile,
+    findTiffOffsets
+});
+
+function isTiffFile(dataView) {
+    const MIN_TIFF_DATA_BUFFER_LENGTH = 4;
+
+    return !!dataView && (dataView.byteLength >= MIN_TIFF_DATA_BUFFER_LENGTH) && hasTiffMarker(dataView);
+}
+
+function hasTiffMarker(dataView) {
+    const TIFF_ID = 0x2a;
+    const TIFF_ID_OFFSET = 2;
+
+    const littleEndian = dataView.getUint16(0) === byte_order.LITTLE_ENDIAN;
+    return dataView.getUint16(TIFF_ID_OFFSET, littleEndian) === TIFF_ID;
+}
+
+function findTiffOffsets() {
+    const TIFF_FILE_HEADER_OFFSET = 0;
+
+    if (constants.USE_EXIF) {
+        return {
+            hasAppMarkers: true,
+            tiffHeaderOffset: TIFF_FILE_HEADER_OFFSET
+        };
+    }
+    return {};
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/image-header-jpeg.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+/* harmony default export */ const image_header_jpeg = ({
+    isJpegFile,
+    findJpegOffsets
+});
+
+const MIN_JPEG_DATA_BUFFER_LENGTH = 2;
+const JPEG_ID = 0xffd8;
+const JPEG_ID_SIZE = 2;
+const APP_ID_OFFSET = 4;
+const APP_MARKER_SIZE = 2;
+const JFIF_DATA_OFFSET = 2; // From start of APP0 marker.
+const TIFF_HEADER_OFFSET = 10; // From start of APP1 marker.
+const IPTC_DATA_OFFSET = 18; // From start of APP13 marker.
+const XMP_DATA_OFFSET = 33; // From start of APP1 marker.
+const XMP_EXTENDED_DATA_OFFSET = 79; // From start of APP1 marker including GUID, total length, and offset.
+const APP2_ICC_DATA_OFFSET = 18; // From start of APP2 marker including marker and chunk/chunk total numbers.
+const MPF_DATA_OFFSET = 8;
+
+const APP2_ICC_IDENTIFIER = 'ICC_PROFILE\0';
+const ICC_CHUNK_NUMBER_OFFSET = APP_ID_OFFSET + APP2_ICC_IDENTIFIER.length;
+const ICC_TOTAL_CHUNKS_OFFSET = ICC_CHUNK_NUMBER_OFFSET + 1;
+
+const APP2_MPF_IDENTIFIER = 'MPF\0';
+
+const SOF0_MARKER = 0xffc0;
+const SOF2_MARKER = 0xffc2;
+const DHT_MARKER = 0xffc4;
+const DQT_MARKER = 0xffdb;
+const DRI_MARKER = 0xffdd;
+const SOS_MARKER = 0xffda;
+
+const APP0_MARKER = 0xffe0;
+const APP1_MARKER = 0xffe1;
+const APP2_MARKER = 0xffe2;
+const APP13_MARKER = 0xffed;
+const APP15_MARKER = 0xffef;
+const COMMENT_MARKER = 0xfffe;
+
+const APP0_JFIF_IDENTIFIER = 'JFIF';
+const APP1_EXIF_IDENTIFIER = 'Exif';
+const APP1_XMP_IDENTIFIER = 'http://ns.adobe.com/xap/1.0/\x00';
+const APP1_XMP_EXTENDED_IDENTIFIER = 'http://ns.adobe.com/xmp/extension/\x00';
+const APP13_IPTC_IDENTIFIER = 'Photoshop 3.0';
+
+function isJpegFile(dataView) {
+    return !!dataView && (dataView.byteLength >= MIN_JPEG_DATA_BUFFER_LENGTH) && (dataView.getUint16(0) === JPEG_ID);
+}
+
+function findJpegOffsets(dataView) {
+    let appMarkerPosition = JPEG_ID_SIZE;
+    let fieldLength;
+    let sof0DataOffset;
+    let sof2DataOffset;
+    let jfifDataOffset;
+    let tiffHeaderOffset;
+    let iptcDataOffset;
+    let xmpChunks;
+    let iccChunks;
+    let mpfDataOffset;
+
+    while (appMarkerPosition + APP_ID_OFFSET + 5 <= dataView.byteLength) {
+        if (constants.USE_FILE && isSOF0Marker(dataView, appMarkerPosition)) {
+            sof0DataOffset = appMarkerPosition + APP_MARKER_SIZE;
+        } else if (constants.USE_FILE && isSOF2Marker(dataView, appMarkerPosition)) {
+            sof2DataOffset = appMarkerPosition + APP_MARKER_SIZE;
+        } else if (constants.USE_JFIF && isApp0JfifMarker(dataView, appMarkerPosition)) {
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+            jfifDataOffset = appMarkerPosition + JFIF_DATA_OFFSET;
+        } else if (constants.USE_EXIF && isApp1ExifMarker(dataView, appMarkerPosition)) {
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+            tiffHeaderOffset = appMarkerPosition + TIFF_HEADER_OFFSET;
+        } else if (constants.USE_XMP && isApp1XmpMarker(dataView, appMarkerPosition)) {
+            if (!xmpChunks) {
+                xmpChunks = [];
+            }
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+            xmpChunks.push(getXmpChunkDetails(appMarkerPosition, fieldLength));
+        } else if (constants.USE_XMP && isApp1ExtendedXmpMarker(dataView, appMarkerPosition)) {
+            if (!xmpChunks) {
+                xmpChunks = [];
+            }
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+            xmpChunks.push(getExtendedXmpChunkDetails(appMarkerPosition, fieldLength));
+        } else if (constants.USE_IPTC && isApp13PhotoshopMarker(dataView, appMarkerPosition)) {
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+            iptcDataOffset = appMarkerPosition + IPTC_DATA_OFFSET;
+        } else if (constants.USE_ICC && isApp2ICCMarker(dataView, appMarkerPosition)) {
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+            const iccDataOffset = appMarkerPosition + APP2_ICC_DATA_OFFSET;
+            const iccDataLength = fieldLength - (APP2_ICC_DATA_OFFSET - APP_MARKER_SIZE);
+
+            const iccChunkNumber = dataView.getUint8(appMarkerPosition + ICC_CHUNK_NUMBER_OFFSET);
+            const iccChunksTotal = dataView.getUint8(appMarkerPosition + ICC_TOTAL_CHUNKS_OFFSET);
+            if (!iccChunks) {
+                iccChunks = [];
+            }
+            iccChunks.push({offset: iccDataOffset, length: iccDataLength, chunkNumber: iccChunkNumber, chunksTotal: iccChunksTotal});
+        } else if (constants.USE_MPF && isApp2MPFMarker(dataView, appMarkerPosition)) {
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+            mpfDataOffset = appMarkerPosition + MPF_DATA_OFFSET;
+        } else if (isAppMarker(dataView, appMarkerPosition)) {
+            fieldLength = dataView.getUint16(appMarkerPosition + APP_MARKER_SIZE);
+        } else {
+            break;
+        }
+        appMarkerPosition += APP_MARKER_SIZE + fieldLength;
+    }
+
+    return {
+        hasAppMarkers: appMarkerPosition > JPEG_ID_SIZE,
+        fileDataOffset: sof0DataOffset || sof2DataOffset,
+        jfifDataOffset,
+        tiffHeaderOffset,
+        iptcDataOffset,
+        xmpChunks,
+        iccChunks,
+        mpfDataOffset
+    };
+}
+
+function isSOF0Marker(dataView, appMarkerPosition) {
+    return (dataView.getUint16(appMarkerPosition) === SOF0_MARKER);
+}
+
+function isSOF2Marker(dataView, appMarkerPosition) {
+    return (dataView.getUint16(appMarkerPosition) === SOF2_MARKER);
+}
+
+function isApp2ICCMarker(dataView, appMarkerPosition) {
+    const markerIdLength = APP2_ICC_IDENTIFIER.length;
+
+    return (dataView.getUint16(appMarkerPosition) === APP2_MARKER)
+        && (getStringFromDataView(dataView, appMarkerPosition + APP_ID_OFFSET, markerIdLength) === APP2_ICC_IDENTIFIER);
+}
+
+function isApp2MPFMarker(dataView, appMarkerPosition) {
+    const markerIdLength = APP2_MPF_IDENTIFIER.length;
+
+    return (dataView.getUint16(appMarkerPosition) === APP2_MARKER)
+        && (getStringFromDataView(dataView, appMarkerPosition + APP_ID_OFFSET, markerIdLength) === APP2_MPF_IDENTIFIER);
+}
+
+function isApp0JfifMarker(dataView, appMarkerPosition) {
+    const markerIdLength = APP1_EXIF_IDENTIFIER.length;
+
+    return (dataView.getUint16(appMarkerPosition) === APP0_MARKER)
+        && (getStringFromDataView(dataView, appMarkerPosition + APP_ID_OFFSET, markerIdLength) === APP0_JFIF_IDENTIFIER)
+        && (dataView.getUint8(appMarkerPosition + APP_ID_OFFSET + markerIdLength) === 0x00);
+}
+
+function isApp1ExifMarker(dataView, appMarkerPosition) {
+    const markerIdLength = APP1_EXIF_IDENTIFIER.length;
+
+    return (dataView.getUint16(appMarkerPosition) === APP1_MARKER)
+        && (getStringFromDataView(dataView, appMarkerPosition + APP_ID_OFFSET, markerIdLength) === APP1_EXIF_IDENTIFIER)
+        && (dataView.getUint8(appMarkerPosition + APP_ID_OFFSET + markerIdLength) === 0x00);
+}
+
+function isApp1XmpMarker(dataView, appMarkerPosition) {
+    return (dataView.getUint16(appMarkerPosition) === APP1_MARKER)
+        && isXmpIdentifier(dataView, appMarkerPosition);
+}
+
+function isXmpIdentifier(dataView, appMarkerPosition) {
+    const markerIdLength = APP1_XMP_IDENTIFIER.length;
+    return getStringFromDataView(dataView, appMarkerPosition + APP_ID_OFFSET, markerIdLength) === APP1_XMP_IDENTIFIER;
+}
+
+function isApp1ExtendedXmpMarker(dataView, appMarkerPosition) {
+    return (dataView.getUint16(appMarkerPosition) === APP1_MARKER)
+        && isExtendedXmpIdentifier(dataView, appMarkerPosition);
+}
+
+function isExtendedXmpIdentifier(dataView, appMarkerPosition) {
+    const markerIdLength = APP1_XMP_EXTENDED_IDENTIFIER.length;
+    return getStringFromDataView(dataView, appMarkerPosition + APP_ID_OFFSET, markerIdLength) === APP1_XMP_EXTENDED_IDENTIFIER;
+}
+
+function getXmpChunkDetails(appMarkerPosition, fieldLength) {
+    return {
+        dataOffset: appMarkerPosition + XMP_DATA_OFFSET,
+        length: fieldLength - (XMP_DATA_OFFSET - APP_MARKER_SIZE)
+    };
+}
+
+function getExtendedXmpChunkDetails(appMarkerPosition, fieldLength) {
+    return {
+        dataOffset: appMarkerPosition + XMP_EXTENDED_DATA_OFFSET,
+        length: fieldLength - (XMP_EXTENDED_DATA_OFFSET - APP_MARKER_SIZE)
+    };
+}
+
+function isApp13PhotoshopMarker(dataView, appMarkerPosition) {
+    const markerIdLength = APP13_IPTC_IDENTIFIER.length;
+
+    return (dataView.getUint16(appMarkerPosition) === APP13_MARKER)
+        && (getStringFromDataView(dataView, appMarkerPosition + APP_ID_OFFSET, markerIdLength) === APP13_IPTC_IDENTIFIER)
+        && (dataView.getUint8(appMarkerPosition + APP_ID_OFFSET + markerIdLength) === 0x00);
+}
+
+function isAppMarker(dataView, appMarkerPosition) {
+    const appMarker = dataView.getUint16(appMarkerPosition);
+    return ((appMarker >= APP0_MARKER) && (appMarker <= APP15_MARKER))
+        || (appMarker === COMMENT_MARKER)
+        || (appMarker === SOF0_MARKER)
+        || (appMarker === SOF2_MARKER)
+        || (appMarker === DHT_MARKER)
+        || (appMarker === DQT_MARKER)
+        || (appMarker === DRI_MARKER)
+        || (appMarker === SOS_MARKER);
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/image-header-png.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+/* harmony default export */ const image_header_png = ({
+    isPngFile,
+    findPngOffsets
+});
+
+const PNG_ID = '\x89\x50\x4e\x47\x0d\x0a\x1a\x0a';
+const PNG_CHUNK_LENGTH_SIZE = 4;
+const PNG_CHUNK_TYPE_SIZE = 4;
+const PNG_CHUNK_LENGTH_OFFSET = 0;
+const PNG_CHUNK_TYPE_OFFSET = PNG_CHUNK_LENGTH_SIZE;
+const PNG_CHUNK_DATA_OFFSET = PNG_CHUNK_LENGTH_SIZE + PNG_CHUNK_TYPE_SIZE;
+const PNG_XMP_PREFIX = 'XML:com.adobe.xmp\x00';
+
+function isPngFile(dataView) {
+    return !!dataView && getStringFromDataView(dataView, 0, PNG_ID.length) === PNG_ID;
+}
+
+function findPngOffsets(dataView) {
+    const PNG_CRC_SIZE = 4;
+
+    const offsets = {
+        hasAppMarkers: false
+    };
+
+    let offset = PNG_ID.length;
+
+    while (offset + PNG_CHUNK_LENGTH_SIZE + PNG_CHUNK_TYPE_SIZE <= dataView.byteLength) {
+        if (constants.USE_PNG_FILE && isPngImageHeaderChunk(dataView, offset)) {
+            offsets.hasAppMarkers = true;
+            offsets.pngHeaderOffset = offset + PNG_CHUNK_DATA_OFFSET;
+        } else if (constants.USE_XMP && isPngXmpChunk(dataView, offset)) {
+            const dataOffset = getPngXmpDataOffset(dataView, offset);
+            if (dataOffset !== undefined) {
+                offsets.hasAppMarkers = true;
+                offsets.xmpChunks = [{
+                    dataOffset,
+                    length: dataView.getUint32(offset + PNG_CHUNK_LENGTH_OFFSET) - (dataOffset - (offset + PNG_CHUNK_DATA_OFFSET))
+                }];
+            }
+        }
+
+        offset += dataView.getUint32(offset + PNG_CHUNK_LENGTH_OFFSET)
+            + PNG_CHUNK_LENGTH_SIZE
+            + PNG_CHUNK_TYPE_SIZE
+            + PNG_CRC_SIZE;
+    }
+
+    return offsets;
+}
+
+function isPngImageHeaderChunk(dataView, offset) {
+    const PNG_CHUNK_TYPE_IMAGE_HEADER = 'IHDR';
+    return getStringFromDataView(dataView, offset + PNG_CHUNK_TYPE_OFFSET, PNG_CHUNK_TYPE_SIZE) === PNG_CHUNK_TYPE_IMAGE_HEADER;
+}
+
+function isPngXmpChunk(dataView, offset) {
+    const PNG_CHUNK_TYPE_INTERNATIONAL_TEXT = 'iTXt';
+    return (getStringFromDataView(dataView, offset + PNG_CHUNK_TYPE_OFFSET, PNG_CHUNK_TYPE_SIZE) === PNG_CHUNK_TYPE_INTERNATIONAL_TEXT)
+        && (getStringFromDataView(dataView, offset + PNG_CHUNK_DATA_OFFSET, PNG_XMP_PREFIX.length) === PNG_XMP_PREFIX);
+}
+
+function getPngXmpDataOffset(dataView, offset) {
+    const COMPRESSION_FLAG_SIZE = 1;
+    const COMPRESSION_METHOD_SIZE = 1;
+
+    offset += PNG_CHUNK_DATA_OFFSET + PNG_XMP_PREFIX.length + COMPRESSION_FLAG_SIZE + COMPRESSION_METHOD_SIZE;
+
+    let numberOfNullSeparators = 0;
+    while (numberOfNullSeparators < 2 && offset < dataView.byteLength) {
+        if (dataView.getUint8(offset) === 0x00) {
+            numberOfNullSeparators++;
+        }
+        offset++;
+    }
+    if (numberOfNullSeparators < 2) {
+        return undefined;
+    }
+    return offset;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/image-header-heic.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+/* harmony default export */ const image_header_heic = ({
+    isHeicFile,
+    findHeicOffsets
+});
+
+function isHeicFile(dataView) {
+    if (!dataView) {
+        return false;
+    }
+
+    const HEIC_ID = 'ftyp';
+    const HEIC_ID_OFFSET = 4;
+    const HEIC_MAJOR_BRANDS = ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'mif1'];
+    const HEIC_MAJOR_BRAND_LENGTH = 4;
+
+    const heicMajorBrand = getStringFromDataView(dataView, HEIC_ID_OFFSET + HEIC_ID.length, HEIC_MAJOR_BRAND_LENGTH);
+
+    return (getStringFromDataView(dataView, HEIC_ID_OFFSET, HEIC_ID.length) === HEIC_ID)
+        && (HEIC_MAJOR_BRANDS.indexOf(heicMajorBrand) !== -1);
+}
+
+function findHeicOffsets(dataView) {
+    if (constants.USE_EXIF || constants.USE_ICC) {
+        const {offset: metaOffset, length: metaLength} = findMetaAtom(dataView);
+        if (metaOffset === undefined) {
+            return {hasAppMarkers: false};
+        }
+
+        const metaEndOffset = Math.min(metaOffset + metaLength, dataView.byteLength);
+        const {exifItemOffset, ilocOffset, colrOffset} = findMetaItems(dataView, metaOffset, metaEndOffset);
+
+        const exifOffset = findExifOffset(dataView, exifItemOffset, ilocOffset, metaEndOffset);
+        const iccChunks = findIccChunks(dataView, colrOffset, metaEndOffset);
+        return {
+            hasAppMarkers: (exifOffset !== undefined) || (iccChunks !== undefined),
+            tiffHeaderOffset: exifOffset,
+            iccChunks
+        };
+    }
+
+    return {hasAppMarkers: false};
+}
+
+function findMetaAtom(dataView) {
+    const ATOM_LENGTH_SIZE = 4;
+    const ATOM_TYPE_SIZE = 4;
+    const ATOM_MIN_LENGTH = 8;
+    const ATOM_TYPE_OFFSET = 4;
+
+    let offset = 0;
+
+    while (offset + ATOM_LENGTH_SIZE + ATOM_TYPE_SIZE <= dataView.byteLength) {
+        const atomLength = getAtomLength(dataView, offset);
+        if (atomLength >= ATOM_MIN_LENGTH) {
+            const atomType = getStringFromDataView(dataView, offset + ATOM_TYPE_OFFSET, ATOM_TYPE_SIZE);
+            if (atomType === 'meta') {
+                return {
+                    offset,
+                    length: atomLength
+                };
+            }
+        }
+
+        offset += atomLength;
+    }
+
+    return {
+        offset: undefined,
+        length: 0
+    };
+}
+
+function getAtomLength(dataView, offset) {
+    const ATOM_EXTENDED_SIZE_LOW_OFFSET = 12;
+
+    const atomLength = dataView.getUint32(offset);
+    if (extendsToEndOfFile(atomLength)) {
+        return dataView.byteLength - offset;
+    }
+    if (hasExtendedSize(atomLength)) {
+        if (hasEmptyHighBits(dataView, offset)) {
+            // It's a bit tricky to handle 64 bit numbers in JavaScript. Let's
+            // wait until there are real-world examples where it is necessary.
+            return dataView.getUint32(offset + ATOM_EXTENDED_SIZE_LOW_OFFSET);
+        }
+    }
+
+    return atomLength;
+}
+
+function extendsToEndOfFile(atomLength) {
+    return atomLength === 0;
+}
+
+function hasExtendedSize(atomLength) {
+    return atomLength === 1;
+}
+
+function hasEmptyHighBits(dataView, offset) {
+    const ATOM_EXTENDED_SIZE_OFFSET = 8;
+    return dataView.getUint32(offset + ATOM_EXTENDED_SIZE_OFFSET) === 0;
+}
+
+function findMetaItems(dataView, offset, metaEndOffset) {
+    const STRING_SIZE = 4;
+    const ITEM_INDEX_REL_OFFSET = -4;
+    const offsets = {
+        ilocOffset: undefined,
+        exifItemOffset: undefined,
+        colrOffset: undefined
+    };
+
+    while ((offset + STRING_SIZE <= metaEndOffset)
+        && (!offsets.ilocOffset || !offsets.exifItemOffset || !offsets.colrOffset)) {
+        const itemName = getStringFromDataView(dataView, offset, STRING_SIZE);
+        if (constants.USE_EXIF && (itemName === 'iloc')) {
+            offsets.ilocOffset = offset;
+        } else if (constants.USE_EXIF && (itemName === 'Exif')) {
+            offsets.exifItemOffset = offset + ITEM_INDEX_REL_OFFSET;
+        } else if (constants.USE_ICC && (itemName === 'colr')) {
+            offsets.colrOffset = offset + ITEM_INDEX_REL_OFFSET;
+        }
+
+        offset++;
+    }
+
+    return offsets;
+}
+
+function findExifOffset(dataView, exifItemOffset, offset, metaEndOffset) {
+    const EXIF_ITEM_OFFSET_SIZE = 2;
+    const ILOC_DATA_OFFSET = 12;
+    const EXIF_POINTER_OFFSET = 8;
+    const EXIF_POINTER_SIZE = 4;
+    const EXIF_PREFIX_LENGTH_OFFSET = 4;
+    const ILOC_ITEM_SIZE = 16;
+
+    if (!offset || !exifItemOffset || (exifItemOffset + EXIF_ITEM_OFFSET_SIZE > metaEndOffset)) {
+        return undefined;
+    }
+
+    const exifItemIndex = dataView.getUint16(exifItemOffset);
+    offset += ILOC_DATA_OFFSET;
+
+    while (offset + ILOC_ITEM_SIZE <= metaEndOffset) {
+        const itemIndex = dataView.getUint16(offset);
+        if (itemIndex === exifItemIndex) {
+            const exifPointer = dataView.getUint32(offset + EXIF_POINTER_OFFSET);
+            if (exifPointer + EXIF_POINTER_SIZE <= dataView.byteLength) {
+                const exifOffset = dataView.getUint32(exifPointer);
+                const prefixLength = exifOffset + EXIF_PREFIX_LENGTH_OFFSET;
+                return exifPointer + prefixLength;
+            }
+        }
+        offset += ILOC_ITEM_SIZE;
+    }
+
+    return undefined;
+}
+
+function findIccChunks(dataView, offset, metaEndOffset) {
+    const ITEM_TYPE_OFFSET = 8;
+    const ITEM_TYPE_SIZE = 4;
+    const ITEM_CONTENT_OFFSET = 12;
+
+    if (!offset || (offset + ITEM_CONTENT_OFFSET > metaEndOffset)) {
+        return undefined;
+    }
+
+    const colorType = getStringFromDataView(dataView, offset + ITEM_TYPE_OFFSET, ITEM_TYPE_SIZE);
+    if ((colorType !== 'prof') && (colorType !== 'rICC')) {
+        return undefined;
+    }
+
+    return [{
+        offset: offset + ITEM_CONTENT_OFFSET,
+        length: getAtomLength(dataView, offset) - ITEM_CONTENT_OFFSET,
+        chunkNumber: 1,
+        chunksTotal: 1
+    }];
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/image-header-webp.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+/* harmony default export */ const image_header_webp = ({
+    isWebpFile,
+    findOffsets
+});
+
+function isWebpFile(dataView) {
+    const RIFF_ID_OFFSET = 0;
+    const RIFF_ID = 'RIFF';
+    const WEBP_MARKER_OFFSET = 8;
+    const WEBP_MARKER = 'WEBP';
+
+    return !!dataView && getStringFromDataView(dataView, RIFF_ID_OFFSET, RIFF_ID.length) === RIFF_ID
+        && getStringFromDataView(dataView, WEBP_MARKER_OFFSET, WEBP_MARKER.length) === WEBP_MARKER;
+}
+
+function findOffsets(dataView) {
+    const SUB_CHUNK_START_OFFSET = 12;
+    const CHUNK_SIZE_OFFSET = 4;
+    const EXIF_IDENTIFIER = 'Exif\x00\x00';
+    const CHUNK_HEADER_SIZE = 8;
+
+    let offset = SUB_CHUNK_START_OFFSET;
+    let hasAppMarkers = false;
+    let tiffHeaderOffset;
+    let xmpChunks;
+    let iccChunks;
+
+    while (offset + CHUNK_HEADER_SIZE < dataView.byteLength) {
+        const chunkId = getStringFromDataView(dataView, offset, 4);
+        const chunkSize = dataView.getUint32(offset + CHUNK_SIZE_OFFSET, true);
+
+        if (constants.USE_EXIF && (chunkId === 'EXIF')) {
+            hasAppMarkers = true;
+            if (getStringFromDataView(dataView, offset + CHUNK_HEADER_SIZE, EXIF_IDENTIFIER.length) === EXIF_IDENTIFIER) {
+                tiffHeaderOffset = offset + CHUNK_HEADER_SIZE + EXIF_IDENTIFIER.length;
+            } else {
+                tiffHeaderOffset = offset + CHUNK_HEADER_SIZE;
+            }
+        } else if (constants.USE_XMP && (chunkId === 'XMP ')) {
+            hasAppMarkers = true;
+            xmpChunks = [{
+                dataOffset: offset + CHUNK_HEADER_SIZE,
+                length: chunkSize
+            }];
+        } else if (constants.USE_ICC && (chunkId === 'ICCP')) {
+            hasAppMarkers = true;
+            iccChunks = [{
+                offset: offset + CHUNK_HEADER_SIZE,
+                length: chunkSize,
+                chunkNumber: 1,
+                chunksTotal: 1
+            }];
+        }
+
+        offset += CHUNK_HEADER_SIZE + (chunkSize % 2 === 0 ? chunkSize : chunkSize + 1);
+    }
+
+    return {
+        hasAppMarkers,
+        tiffHeaderOffset,
+        xmpChunks,
+        iccChunks
+    };
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/image-header.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+
+
+/* harmony default export */ const image_header = ({
+    parseAppMarkers
+});
+
+function parseAppMarkers(dataView) {
+    if (constants.USE_TIFF && image_header_tiff.isTiffFile(dataView)) {
+        return image_header_tiff.findTiffOffsets();
+    }
+
+    if (constants.USE_JPEG && image_header_jpeg.isJpegFile(dataView)) {
+        return image_header_jpeg.findJpegOffsets(dataView);
+    }
+
+    if (constants.USE_PNG && image_header_png.isPngFile(dataView)) {
+        return image_header_png.findPngOffsets(dataView);
+    }
+
+    if (constants.USE_HEIC && image_header_heic.isHeicFile(dataView)) {
+        return image_header_heic.findHeicOffsets(dataView);
+    }
+
+    if (constants.USE_WEBP && image_header_webp.isWebpFile(dataView)) {
+        return image_header_webp.findOffsets(dataView);
+    }
+
+    throw new Error('Invalid image format');
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/types.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+const typeSizes = {
+    1: 1, // BYTE
+    2: 1, // ASCII
+    3: 2, // SHORT
+    4: 4, // LONG
+    5: 8, // RATIONAL
+    7: 1, // UNDEFINED
+    9: 4, // SLONG
+    10: 8, // SRATIONAL
+    13: 4 // IFD
+};
+
+const tagTypes = {
+    'BYTE': 1,
+    'ASCII': 2,
+    'SHORT': 3,
+    'LONG': 4,
+    'RATIONAL': 5,
+    'UNDEFINED': 7,
+    'SLONG': 9,
+    'SRATIONAL': 10,
+    'IFD': 13
+};
+
+/* harmony default export */ const types = ({
+    getAsciiValue,
+    getByteAt,
+    getAsciiAt,
+    getShortAt,
+    getLongAt,
+    getRationalAt,
+    getUndefinedAt,
+    getSlongAt,
+    getSrationalAt,
+    getIfdPointerAt,
+    typeSizes,
+    tagTypes,
+    getTypeSize
+});
+
+function getAsciiValue(charArray) {
+    return charArray.map((charCode) => String.fromCharCode(charCode));
+}
+
+function getByteAt(dataView, offset) {
+    return dataView.getUint8(offset);
+}
+
+function getAsciiAt(dataView, offset) {
+    return dataView.getUint8(offset);
+}
+
+function getShortAt(dataView, offset, byteOrder) {
+    return dataView.getUint16(offset, byteOrder === byte_order.LITTLE_ENDIAN);
+}
+
+function getLongAt(dataView, offset, byteOrder) {
+    return dataView.getUint32(offset, byteOrder === byte_order.LITTLE_ENDIAN);
+}
+
+function getRationalAt(dataView, offset, byteOrder) {
+    return [getLongAt(dataView, offset, byteOrder), getLongAt(dataView, offset + 4, byteOrder)];
+}
+
+function getUndefinedAt(dataView, offset) {
+    return getByteAt(dataView, offset);
+}
+
+function getSlongAt(dataView, offset, byteOrder) {
+    return dataView.getInt32(offset, byteOrder === byte_order.LITTLE_ENDIAN);
+}
+
+function getSrationalAt(dataView, offset, byteOrder) {
+    return [getSlongAt(dataView, offset, byteOrder), getSlongAt(dataView, offset + 4, byteOrder)];
+}
+
+function getIfdPointerAt(dataView, offset, byteOrder) {
+    return getLongAt(dataView, offset, byteOrder);
+}
+
+function getTypeSize(typeName) {
+    if (tagTypes[typeName] === undefined) {
+        throw new Error('No such type found.');
+    }
+
+    return typeSizes[tagTypes[typeName]];
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names-common.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* harmony default export */ const tag_names_common = ({
+    'LightSource': (value) => {
+        if (value === 1) {
+            return 'Daylight';
+        } else if (value === 2) {
+            return 'Fluorescent';
+        } else if (value === 3) {
+            return 'Tungsten (incandescent light)';
+        } else if (value === 4) {
+            return 'Flash';
+        } else if (value === 9) {
+            return 'Fine weather';
+        } else if (value === 10) {
+            return 'Cloudy weather';
+        } else if (value === 11) {
+            return 'Shade';
+        } else if (value === 12) {
+            return 'Daylight fluorescent (D 5700 – 7100K)';
+        } else if (value === 13) {
+            return 'Day white fluorescent (N 4600 – 5400K)';
+        } else if (value === 14) {
+            return 'Cool white fluorescent (W 3900 – 4500K)';
+        } else if (value === 15) {
+            return 'White fluorescent (WW 3200 – 3700K)';
+        } else if (value === 17) {
+            return 'Standard light A';
+        } else if (value === 18) {
+            return 'Standard light B';
+        } else if (value === 19) {
+            return 'Standard light C';
+        } else if (value === 20) {
+            return 'D55';
+        } else if (value === 21) {
+            return 'D65';
+        } else if (value === 22) {
+            return 'D75';
+        } else if (value === 23) {
+            return 'D50';
+        } else if (value === 24) {
+            return 'ISO studio tungsten';
+        } else if (value === 255) {
+            return 'Other light source';
+        }
+        return 'Unknown';
+    }
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names-0th-ifd.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const tag_names_0th_ifd = ({
+    0x000b: 'ProcessingSoftware',
+    0x00fe: {
+        name: 'SubfileType',
+        description: (value) => ({
+            0x0: 'Full-resolution image',
+            0x1: 'Reduced-resolution image',
+            0x2: 'Single page of multi-page image',
+            0x3: 'Single page of multi-page reduced-resolution image',
+            0x4: 'Transparency mask',
+            0x5: 'Transparency mask of reduced-resolution image',
+            0x6: 'Transparency mask of multi-page image',
+            0x7: 'Transparency mask of reduced-resolution multi-page image',
+            0x10001: 'Alternate reduced-resolution image',
+            0xffffffff: 'Invalid'
+        })[value] || 'Unknown'
+    },
+    0x00ff: {
+        name: 'OldSubfileType',
+        description: (value) => ({
+            0: 'Full-resolution image',
+            1: 'Reduced-resolution image',
+            2: 'Single page of multi-page image'
+        })[value] || 'Unknown'
+    },
+    0x0100: 'ImageWidth',
+    0x0101: 'ImageLength',
+    0x0102: 'BitsPerSample',
+    0x0103: 'Compression',
+    0x0106: 'PhotometricInterpretation',
+    0x0107: {
+        name: 'Thresholding',
+        description: (value) => ({
+            1: 'No dithering or halftoning',
+            2: 'Ordered dither or halfton',
+            3: 'Randomized dither'
+        })[value] || 'Unknown'
+    },
+    0x0108: 'CellWidth',
+    0x0109: 'CellLength',
+    0x010a: {
+        name: 'FillOrder',
+        description: (value) => ({
+            1: 'Normal',
+            2: 'Reversed'
+        })[value] || 'Unknown'
+    },
+    0x010d: 'DocumentName',
+    0x010e: 'ImageDescription',
+    0x010f: 'Make',
+    0x0110: 'Model',
+    0x0111: 'StripOffsets',
+    0x0112: {
+        name: 'Orientation',
+        description: (value) => {
+            if (value === 1) {
+                return 'top-left';
+            }
+            if (value === 2) {
+                return 'top-right';
+            }
+            if (value === 3) {
+                return 'bottom-right';
+            }
+            if (value === 4) {
+                return 'bottom-left';
+            }
+            if (value === 5) {
+                return 'left-top';
+            }
+            if (value === 6) {
+                return 'right-top';
+            }
+            if (value === 7) {
+                return 'right-bottom';
+            }
+            if (value === 8) {
+                return 'left-bottom';
+            }
+            return 'Undefined';
+        }
+    },
+    0x0115: 'SamplesPerPixel',
+    0x0116: 'RowsPerStrip',
+    0x0117: 'StripByteCounts',
+    0x0118: 'MinSampleValue',
+    0x0119: 'MaxSampleValue',
+    0x011a: {
+        'name': 'XResolution',
+        'description': (value) => {
+            return '' + Math.round(value[0] / value[1]);
+        }
+    },
+    0x011b: {
+        'name': 'YResolution',
+        'description': (value) => {
+            return '' + Math.round(value[0] / value[1]);
+        }
+    },
+    0x011c: 'PlanarConfiguration',
+    0x011d: 'PageName',
+    0x011e: {
+        'name': 'XPosition',
+        'description': (value) => {
+            return '' + Math.round(value[0] / value[1]);
+        }
+    },
+    0x011f: {
+        'name': 'YPosition',
+        'description': (value) => {
+            return '' + Math.round(value[0] / value[1]);
+        }
+    },
+    0x0122: {
+        name: 'GrayResponseUnit',
+        description: (value) => ({
+            1: '0.1',
+            2: '0.001',
+            3: '0.0001',
+            4: '1e-05',
+            5: '1e-06'
+        })[value] || 'Unknown'
+    },
+    0x0128: {
+        name: 'ResolutionUnit',
+        description: (value) => {
+            if (value === 2) {
+                return 'inches';
+            }
+            if (value === 3) {
+                return 'centimeters';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0129: 'PageNumber',
+    0x012d: 'TransferFunction',
+    0x0131: 'Software',
+    0x0132: 'DateTime',
+    0x013b: 'Artist',
+    0x013c: 'HostComputer',
+    0x013d: 'Predictor',
+    0x013e: {
+        'name': 'WhitePoint',
+        'description': (values) => {
+            return values.map((value) => `${value[0]}/${value[1]}`).join(', ');
+        }
+    },
+    0x013f: {
+        'name': 'PrimaryChromaticities',
+        'description': (values) => {
+            return values.map((value) => `${value[0]}/${value[1]}`).join(', ');
+        }
+    },
+    0x0141: 'HalftoneHints',
+    0x0142: 'TileWidth',
+    0x0143: 'TileLength',
+    0x014a: 'A100DataOffset',
+    0x014c: {
+        name: 'InkSet',
+        description: (value) => ({
+            1: 'CMYK',
+            2: 'Not CMYK'
+        })[value] || 'Unknown'
+    },
+    0x0151: 'TargetPrinter',
+    0x0152: {
+        name: 'ExtraSamples',
+        description: (value) => ({
+            0: 'Unspecified',
+            1: 'Associated Alpha',
+            2: 'Unassociated Alpha',
+        })[value] || 'Unknown'
+    },
+    0x0153: {
+        name: 'SampleFormat',
+        description: (value) => {
+            const formats = {
+                1: 'Unsigned',
+                2: 'Signed',
+                3: 'Float',
+                4: 'Undefined',
+                5: 'Complex int',
+                6: 'Complex float',
+            };
+            if (!Array.isArray(value)) {
+                return 'Unknown';
+            }
+            return value.map((sample) => formats[sample] || 'Unknown').join(', ');
+        }
+    },
+    0x0201: 'JPEGInterchangeFormat',
+    0x0202: 'JPEGInterchangeFormatLength',
+    0x0211: {
+        'name': 'YCbCrCoefficients',
+        'description': (values) => {
+            return values.map((value) => '' + value[0] / value[1]).join('/');
+        }
+    },
+    0x0212: 'YCbCrSubSampling',
+    0x0213: {
+        name: 'YCbCrPositioning',
+        description: (value) => {
+            if (value === 1) {
+                return 'centered';
+            }
+            if (value === 2) {
+                return 'co-sited';
+            }
+            return 'undefined ' + value;
+        }
+    },
+    0x0214: {
+        'name': 'ReferenceBlackWhite',
+        'description': (values) => {
+            return values.map((value) => '' + value[0] / value[1]).join(', ');
+        }
+    },
+    0x02bc: 'ApplicationNotes',
+    0x4746: 'Rating',
+    0x4749: 'RatingPercent',
+    0x8298: {
+        name: 'Copyright',
+        description: (value) => value.join('; ')
+    },
+    0x830e: 'PixelScale',
+    0x83bb: 'IPTC-NAA',
+    0x8480: 'IntergraphMatrix',
+    0x8482: 'ModelTiePoint',
+    0x8546: 'SEMInfo',
+    0x85d8: 'ModelTransform',
+    0x8649: 'PhotoshopSettings',
+    0x8769: 'Exif IFD Pointer',
+    0x8773: 'ICC_Profile',
+    0x87af: 'GeoTiffDirectory',
+    0x87b0: 'GeoTiffDoubleParams',
+    0x87b1: 'GeoTiffAsciiParams',
+    0x8825: 'GPS Info IFD Pointer',
+    0x9c9b: 'XPTitle',
+    0x9c9c: 'XPComment',
+    0x9c9d: 'XPAuthor',
+    0x9c9e: 'XPKeywords',
+    0x9c9f: 'XPSubject',
+    0xa480: 'GDALMetadata',
+    0xa481: 'GDALNoData',
+    0xc4a5: 'PrintIM',
+    0xc613: 'DNGBackwardVersion',
+    0xc614: 'UniqueCameraModel',
+    0xc615: 'LocalizedCameraModel',
+    0xc621: 'ColorMatrix1',
+    0xc622: 'ColorMatrix2',
+    0xc623: 'CameraCalibration1',
+    0xc624: 'CameraCalibration2',
+    0xc625: 'ReductionMatrix1',
+    0xc626: 'ReductionMatrix2',
+    0xc627: 'AnalogBalance',
+    0xc628: 'AsShotNeutral',
+    0xc629: 'AsShotWhiteXY',
+    0xc62a: 'BaselineExposure',
+    0xc62b: 'BaselineNoise',
+    0xc62c: 'BaselineSharpness',
+    0xc62e: 'LinearResponseLimit',
+    0xc62f: 'CameraSerialNumber',
+    0xc630: 'DNGLensInfo',
+    0xc633: 'ShadowScale',
+    0xc635: {
+        name: 'MakerNoteSafety',
+        description: (value) => ({
+            0: 'Unsafe',
+            1: 'Safe'
+        })[value] || 'Unknown'
+    },
+    0xc65a: {
+        name: 'CalibrationIlluminant1',
+        description: tag_names_common.LightSource
+    },
+    0xc65b: {
+        name: 'CalibrationIlluminant2',
+        description: tag_names_common.LightSource
+    },
+    0xc65d: 'RawDataUniqueID',
+    0xc68b: 'OriginalRawFileName',
+    0xc68c: 'OriginalRawFileData',
+    0xc68f: 'AsShotICCProfile',
+    0xc690: 'AsShotPreProfileMatrix',
+    0xc691: 'CurrentICCProfile',
+    0xc692: 'CurrentPreProfileMatrix',
+    0xc6bf: 'ColorimetricReference',
+    0xc6c5: 'SRawType',
+    0xc6d2: 'PanasonicTitle',
+    0xc6d3: 'PanasonicTitle2',
+    0xc6f3: 'CameraCalibrationSig',
+    0xc6f4: 'ProfileCalibrationSig',
+    0xc6f5: 'ProfileIFD',
+    0xc6f6: 'AsShotProfileName',
+    0xc6f8: 'ProfileName',
+    0xc6f9: 'ProfileHueSatMapDims',
+    0xc6fa: 'ProfileHueSatMapData1',
+    0xc6fb: 'ProfileHueSatMapData2',
+    0xc6fc: 'ProfileToneCurve',
+    0xc6fd: {
+        name: 'ProfileEmbedPolicy',
+        description: (value) => ({
+            0: 'Allow Copying',
+            1: 'Embed if Used',
+            2: 'Never Embed',
+            3: 'No Restrictions'
+        })[value] || 'Unknown'
+    },
+    0xc6fe: 'ProfileCopyright',
+    0xc714: 'ForwardMatrix1',
+    0xc715: 'ForwardMatrix2',
+    0xc716: 'PreviewApplicationName',
+    0xc717: 'PreviewApplicationVersion',
+    0xc718: 'PreviewSettingsName',
+    0xc719: 'PreviewSettingsDigest',
+    0xc71a: {
+        name: 'PreviewColorSpace',
+        description: (value) => ({
+            1: 'Gray Gamma 2.2',
+            2: 'sRGB',
+            3: 'Adobe RGB',
+            4: 'ProPhoto RGB'
+        })[value] || 'Unknown'
+    },
+    0xc71b: 'PreviewDateTime',
+    0xc71c: 'RawImageDigest',
+    0xc71d: 'OriginalRawFileDigest',
+    0xc725: 'ProfileLookTableDims',
+    0xc726: 'ProfileLookTableData',
+    0xc763: 'TimeCodes',
+    0xc764: 'FrameRate',
+    0xc772: 'TStop',
+    0xc789: 'ReelName',
+    0xc791: 'OriginalDefaultFinalSize',
+    0xc792: 'OriginalBestQualitySize',
+    0xc793: 'OriginalDefaultCropSize',
+    0xc7a1: 'CameraLabel',
+    0xc7a3: {
+        name: 'ProfileHueSatMapEncoding',
+        description: (value) => ({
+            0: 'Linear',
+            1: 'sRGB'
+        })[value] || 'Unknown'
+    },
+    0xc7a4: {
+        name: 'ProfileLookTableEncoding',
+        description: (value) => ({
+            0: 'Linear',
+            1: 'sRGB'
+        })[value] || 'Unknown'
+    },
+    0xc7a5: 'BaselineExposureOffset',
+    0xc7a6: {
+        name: 'DefaultBlackRender',
+        description: (value) => ({
+            0: 'Auto',
+            1: 'None'
+        })[value] || 'Unknown'
+    },
+    0xc7a7: 'NewRawImageDigest',
+    0xc7a8: 'RawToPreviewGain'
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names-exif-ifd.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+/* harmony default export */ const tag_names_exif_ifd = ({
+    0x829a: {
+        'name': 'ExposureTime',
+        'description': (value) => {
+            if (value[0] !== 0) {
+                return `1/${Math.round(value[1] / value[0])}`;
+            }
+            return `0/${value[1]}`;
+        }
+    },
+    0x829d: {
+        'name': 'FNumber',
+        'description': (value) => `f/${value[0] / value[1]}`
+    },
+    0x8822: {
+        'name': 'ExposureProgram',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Undefined';
+            } else if (value === 1) {
+                return 'Manual';
+            } else if (value === 2) {
+                return 'Normal program';
+            } else if (value === 3) {
+                return 'Aperture priority';
+            } else if (value === 4) {
+                return 'Shutter priority';
+            } else if (value === 5) {
+                return 'Creative program';
+            } else if (value === 6) {
+                return 'Action program';
+            } else if (value === 7) {
+                return 'Portrait mode';
+            } else if (value === 8) {
+                return 'Landscape mode';
+            } else if (value === 9) {
+                return 'Bulb';
+            }
+            return 'Unknown';
+        }
+    },
+    0x8824: 'SpectralSensitivity',
+    0x8827: 'ISOSpeedRatings',
+    0x8828: {
+        'name': 'OECF',
+        'description': () => '[Raw OECF table data]'
+    },
+    0x882a: 'TimeZoneOffset',
+    0x882b: 'SelfTimerMode',
+    0x8830: {
+        name: 'SensitivityType',
+        description: (value) => ({
+            1: 'Standard Output Sensitivity',
+            2: 'Recommended Exposure Index',
+            3: 'ISO Speed',
+            4: 'Standard Output Sensitivity and Recommended Exposure Index',
+            5: 'Standard Output Sensitivity and ISO Speed',
+            6: 'Recommended Exposure Index and ISO Speed',
+            7: 'Standard Output Sensitivity, Recommended Exposure Index and ISO Speed'
+        })[value] || 'Unknown'
+    },
+    0x8831: 'StandardOutputSensitivity',
+    0x8832: 'RecommendedExposureIndex',
+    0x8833: 'ISOSpeed',
+    0x8834: 'ISOSpeedLatitudeyyy',
+    0x8835: 'ISOSpeedLatitudezzz',
+    0x9000: {
+        'name': 'ExifVersion',
+        'description': (value) => getStringValue(value)
+    },
+    0x9003: 'DateTimeOriginal',
+    0x9004: 'DateTimeDigitized',
+    0x9009: 'GooglePlusUploadCode',
+    0x9010: 'OffsetTime',
+    0x9011: 'OffsetTimeOriginal',
+    0x9012: 'OffsetTimeDigitized',
+    0x9101: {
+        'name': 'ComponentsConfiguration',
+        'description': (value) => {
+            return value.map((character) => {
+                if (character === 0x31) {
+                    return 'Y';
+                } else if (character === 0x32) {
+                    return 'Cb';
+                } else if (character === 0x33) {
+                    return 'Cr';
+                } else if (character === 0x34) {
+                    return 'R';
+                } else if (character === 0x35) {
+                    return 'G';
+                } else if (character === 0x36) {
+                    return 'B';
+                }
+            }).join('');
+        }
+    },
+    0x9102: 'CompressedBitsPerPixel',
+    0x9201: {
+        'name': 'ShutterSpeedValue',
+        'description': (value) => {
+            return `1/${Math.round(Math.pow(2, value[0] / value[1]))}`;
+        }
+    },
+    0x9202: {
+        'name': 'ApertureValue',
+        'description': (value) => {
+            return Math.pow(Math.sqrt(2), value[0] / value[1]).toFixed(2);
+        }
+    },
+    0x9203: 'BrightnessValue',
+    0x9204: 'ExposureBiasValue',
+    0x9205: {
+        'name': 'MaxApertureValue',
+        'description': (value) => {
+            return Math.pow(Math.sqrt(2), value[0] / value[1]).toFixed(2);
+        }
+    },
+    0x9206: {
+        'name': 'SubjectDistance',
+        'description': (value) => (value[0] / value[1]) + ' m'
+    },
+    0x9207: {
+        'name': 'MeteringMode',
+        'description': (value) => {
+            if (value === 1) {
+                return 'Average';
+            } else if (value === 2) {
+                return 'CenterWeightedAverage';
+            } else if (value === 3) {
+                return 'Spot';
+            } else if (value === 4) {
+                return 'MultiSpot';
+            } else if (value === 5) {
+                return 'Pattern';
+            } else if (value === 6) {
+                return 'Partial';
+            } else if (value === 255) {
+                return 'Other';
+            }
+            return 'Unknown';
+        }
+    },
+    0x9208: {
+        'name': 'LightSource',
+        description: tag_names_common.LightSource
+    },
+    0x9209: {
+        'name': 'Flash',
+        'description': (value) => {
+            if (value === 0x00) {
+                return 'Flash did not fire';
+            } else if (value === 0x01) {
+                return 'Flash fired';
+            } else if (value === 0x05) {
+                return 'Strobe return light not detected';
+            } else if (value === 0x07) {
+                return 'Strobe return light detected';
+            } else if (value === 0x09) {
+                return 'Flash fired, compulsory flash mode';
+            } else if (value === 0x0d) {
+                return 'Flash fired, compulsory flash mode, return light not detected';
+            } else if (value === 0x0f) {
+                return 'Flash fired, compulsory flash mode, return light detected';
+            } else if (value === 0x10) {
+                return 'Flash did not fire, compulsory flash mode';
+            } else if (value === 0x18) {
+                return 'Flash did not fire, auto mode';
+            } else if (value === 0x19) {
+                return 'Flash fired, auto mode';
+            } else if (value === 0x1d) {
+                return 'Flash fired, auto mode, return light not detected';
+            } else if (value === 0x1f) {
+                return 'Flash fired, auto mode, return light detected';
+            } else if (value === 0x20) {
+                return 'No flash function';
+            } else if (value === 0x41) {
+                return 'Flash fired, red-eye reduction mode';
+            } else if (value === 0x45) {
+                return 'Flash fired, red-eye reduction mode, return light not detected';
+            } else if (value === 0x47) {
+                return 'Flash fired, red-eye reduction mode, return light detected';
+            } else if (value === 0x49) {
+                return 'Flash fired, compulsory flash mode, red-eye reduction mode';
+            } else if (value === 0x4d) {
+                return 'Flash fired, compulsory flash mode, red-eye reduction mode, return light not detected';
+            } else if (value === 0x4f) {
+                return 'Flash fired, compulsory flash mode, red-eye reduction mode, return light detected';
+            } else if (value === 0x59) {
+                return 'Flash fired, auto mode, red-eye reduction mode';
+            } else if (value === 0x5d) {
+                return 'Flash fired, auto mode, return light not detected, red-eye reduction mode';
+            } else if (value === 0x5f) {
+                return 'Flash fired, auto mode, return light detected, red-eye reduction mode';
+            }
+            return 'Unknown';
+        }
+    },
+    0x920a: {
+        'name': 'FocalLength',
+        'description': (value) => (value[0] / value[1]) + ' mm'
+    },
+    0x9211: 'ImageNumber',
+    0x9212: {
+        name: 'SecurityClassification',
+        description: (value) => ({
+            'C': 'Confidential',
+            'R': 'Restricted',
+            'S': 'Secret',
+            'T': 'Top Secret',
+            'U': 'Unclassified'
+        })[value] || 'Unknown'
+    },
+    0x9213: 'ImageHistory',
+    0x9214: {
+        'name': 'SubjectArea',
+        'description': (value) => {
+            if (value.length === 2) {
+                return `Location; X: ${value[0]}, Y: ${value[1]}`;
+            } else if (value.length === 3) {
+                return `Circle; X: ${value[0]}, Y: ${value[1]}, diameter: ${value[2]}`;
+            } else if (value.length === 4) {
+                return `Rectangle; X: ${value[0]}, Y: ${value[1]}, width: ${value[2]}, height: ${value[3]}`;
+            }
+            return 'Unknown';
+        }
+    },
+    0x927c: {
+        'name': 'MakerNote',
+        'description': () => '[Raw maker note data]'
+    },
+    0x9286: {
+        'name': 'UserComment',
+        'description': getEncodedString
+    },
+    0x9290: 'SubSecTime',
+    0x9291: 'SubSecTimeOriginal',
+    0x9292: 'SubSecTimeDigitized',
+    0x9400: {
+        'name': 'AmbientTemperature',
+        'description': (value) => (value[0] / value[1]) + ' °C'
+    },
+    0x9401: {
+        'name': 'Humidity',
+        'description': (value) => (value[0] / value[1]) + ' %'
+    },
+    0x9402: {
+        'name': 'Pressure',
+        'description': (value) => (value[0] / value[1]) + ' hPa'
+    },
+    0x9403: {
+        'name': 'WaterDepth',
+        'description': (value) => (value[0] / value[1]) + ' m'
+    },
+    0x9404: {
+        'name': 'Acceleration',
+        'description': (value) => (value[0] / value[1]) + ' mGal'
+    },
+    0x9405: {
+        'name': 'CameraElevationAngle',
+        'description': (value) => (value[0] / value[1]) + ' °'
+    },
+    0xa000: {
+        'name': 'FlashpixVersion',
+        'description': (value) => value.map((charCode) => String.fromCharCode(charCode)).join('')
+    },
+    0xa001: {
+        'name': 'ColorSpace',
+        'description': (value) => {
+            if (value === 1) {
+                return 'sRGB';
+            } else if (value === 0xffff) {
+                return 'Uncalibrated';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa002: 'PixelXDimension',
+    0xa003: 'PixelYDimension',
+    0xa004: 'RelatedSoundFile',
+    0xa005: 'Interoperability IFD Pointer',
+    0xa20b: 'FlashEnergy',
+    0xa20c: {
+        'name': 'SpatialFrequencyResponse',
+        'description': () => '[Raw SFR table data]'
+    },
+    0xa20e: 'FocalPlaneXResolution',
+    0xa20f: 'FocalPlaneYResolution',
+    0xa210: {
+        'name': 'FocalPlaneResolutionUnit',
+        'description': (value) => {
+            if (value === 2) {
+                return 'inches';
+            } else if (value === 3) {
+                return 'centimeters';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa214: {
+        'name': 'SubjectLocation',
+        'description': ([x, y]) => `X: ${x}, Y: ${y}`
+    },
+    0xa215: 'ExposureIndex',
+    0xa217: {
+        'name': 'SensingMethod',
+        'description': (value) => {
+            if (value === 1) {
+                return 'Undefined';
+            } else if (value === 2) {
+                return 'One-chip color area sensor';
+            } else if (value === 3) {
+                return 'Two-chip color area sensor';
+            } else if (value === 4) {
+                return 'Three-chip color area sensor';
+            } else if (value === 5) {
+                return 'Color sequential area sensor';
+            } else if (value === 7) {
+                return 'Trilinear sensor';
+            } else if (value === 8) {
+                return 'Color sequential linear sensor';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa300: {
+        'name': 'FileSource',
+        'description': (value) => {
+            if (value === 3) {
+                return 'DSC';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa301: {
+        'name': 'SceneType',
+        'description': (value) => {
+            if (value === 1) {
+                return 'A directly photographed image';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa302: {
+        'name': 'CFAPattern',
+        'description': () => '[Raw CFA pattern table data]'
+    },
+    0xa401: {
+        'name': 'CustomRendered',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Normal process';
+            } else if (value === 1) {
+                return 'Custom process';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa402: {
+        'name': 'ExposureMode',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Auto exposure';
+            } else if (value === 1) {
+                return 'Manual exposure';
+            } else if (value === 2) {
+                return 'Auto bracket';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa403: {
+        'name': 'WhiteBalance',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Auto white balance';
+            } else if (value === 1) {
+                return 'Manual white balance';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa404: {
+        'name': 'DigitalZoomRatio',
+        'description': (value) => {
+            if (value[0] === 0) {
+                return 'Digital zoom was not used';
+            }
+            return '' + (value[0] / value[1]);
+        }
+    },
+    0xa405: {
+        'name': 'FocalLengthIn35mmFilm',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Unknown';
+            }
+            return value;
+        }
+    },
+    0xa406: {
+        'name': 'SceneCaptureType',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Standard';
+            } else if (value === 1) {
+                return 'Landscape';
+            } else if (value === 2) {
+                return 'Portrait';
+            } else if (value === 3) {
+                return 'Night scene';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa407: {
+        'name': 'GainControl',
+        'description': (value) => {
+            if (value === 0) {
+                return 'None';
+            } else if (value === 1) {
+                return 'Low gain up';
+            } else if (value === 2) {
+                return 'High gain up';
+            } else if (value === 3) {
+                return 'Low gain down';
+            } else if (value === 4) {
+                return 'High gain down';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa408: {
+        'name': 'Contrast',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Normal';
+            } else if (value === 1) {
+                return 'Soft';
+            } else if (value === 2) {
+                return 'Hard';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa409: {
+        'name': 'Saturation',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Normal';
+            } else if (value === 1) {
+                return 'Low saturation';
+            } else if (value === 2) {
+                return 'High saturation';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa40a: {
+        'name': 'Sharpness',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Normal';
+            } else if (value === 1) {
+                return 'Soft';
+            } else if (value === 2) {
+                return 'Hard';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa40b: {
+        'name': 'DeviceSettingDescription',
+        'description': () => '[Raw device settings table data]'
+    },
+    0xa40c: {
+        'name': 'SubjectDistanceRange',
+        'description': (value) => {
+            if (value === 1) {
+                return 'Macro';
+            } else if (value === 2) {
+                return 'Close view';
+            } else if (value === 3) {
+                return 'Distant view';
+            }
+            return 'Unknown';
+        }
+    },
+    0xa420: 'ImageUniqueID',
+    0xa430: 'CameraOwnerName',
+    0xa431: 'BodySerialNumber',
+    0xa432: {
+        'name': 'LensSpecification',
+        'description': (value) => {
+            const focalLengths = `${value[0][0] / value[0][1]}-${value[1][0] / value[1][1]} mm`;
+            if (value[3][1] === 0) {
+                return `${focalLengths} f/?`;
+            }
+            return `${focalLengths} f/${1 / ((value[2][1] / value[2][1]) / (value[3][0] / value[3][1]))}`;
+        }
+    },
+    0xa433: 'LensMake',
+    0xa434: 'LensModel',
+    0xa435: 'LensSerialNumber',
+    0xa460: {
+        name: 'CompositeImage',
+        description: (value) => ({
+            1: 'Not a Composite Image',
+            2: 'General Composite Image',
+            3: 'Composite Image Captured While Shooting',
+        })[value] || 'Unknown'
+    },
+    0xa461: 'SourceImageNumberOfCompositeImage',
+    0xa462: 'SourceExposureTimesOfCompositeImage',
+    0xa500: 'Gamma',
+    0xea1c: 'Padding',
+    0xea1d: 'OffsetSchema',
+    0xfde8: 'OwnerName',
+    0xfde9: 'SerialNumber',
+    0xfdea: 'Lens',
+    0xfe4c: 'RawFile',
+    0xfe4d: 'Converter',
+    0xfe4e: 'WhiteBalance',
+    0xfe51: 'Exposure',
+    0xfe52: 'Shadows',
+    0xfe53: 'Brightness',
+    0xfe54: 'Contrast',
+    0xfe55: 'Saturation',
+    0xfe56: 'Sharpness',
+    0xfe57: 'Smoothness',
+    0xfe58: 'MoireFilter'
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names-gps-ifd.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const tag_names_gps_ifd = ({
+    0x0000: {
+        'name': 'GPSVersionID',
+        'description': (value) => {
+            if (value[0] === 2 && value[1] === 2 && value[2] === 0 && value[3] === 0) {
+                return 'Version 2.2';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0001: {
+        'name': 'GPSLatitudeRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'N') {
+                return 'North latitude';
+            } else if (ref === 'S') {
+                return 'South latitude';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0002: {
+        'name': 'GPSLatitude',
+        'description': getCalculatedGpsValue
+    },
+    0x0003: {
+        'name': 'GPSLongitudeRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'E') {
+                return 'East longitude';
+            } else if (ref === 'W') {
+                return 'West longitude';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0004: {
+        'name': 'GPSLongitude',
+        'description': getCalculatedGpsValue
+    },
+    0x0005: {
+        'name': 'GPSAltitudeRef',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Sea level';
+            } else if (value === 1) {
+                return 'Sea level reference (negative value)';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0006: {
+        'name': 'GPSAltitude',
+        'description': (value) => {
+            return (value[0] / value[1]) + ' m';
+        }
+    },
+    0x0007: {
+        'name': 'GPSTimeStamp',
+        'description': (values) => {
+            return values.map(([numerator, denominator]) => {
+                const num = numerator / denominator;
+                if (/^\d(\.|$)/.test(`${num}`)) {
+                    return `0${num}`;
+                }
+                return num;
+            }).join(':');
+        }
+    },
+    0x0008: 'GPSSatellites',
+    0x0009: {
+        'name': 'GPSStatus',
+        'description': (value) => {
+            const status = value.join('');
+            if (status === 'A') {
+                return 'Measurement in progress';
+            } else if (status === 'V') {
+                return 'Measurement Interoperability';
+            }
+            return 'Unknown';
+        }
+    },
+    0x000a: {
+        'name': 'GPSMeasureMode',
+        'description': (value) => {
+            const mode = value.join('');
+            if (mode === '2') {
+                return '2-dimensional measurement';
+            } else if (mode === '3') {
+                return '3-dimensional measurement';
+            }
+            return 'Unknown';
+        }
+    },
+    0x000b: 'GPSDOP',
+    0x000c: {
+        'name': 'GPSSpeedRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'K') {
+                return 'Kilometers per hour';
+            } else if (ref === 'M') {
+                return 'Miles per hour';
+            } else if (ref === 'N') {
+                return 'Knots';
+            }
+            return 'Unknown';
+        }
+    },
+    0x000d: 'GPSSpeed',
+    0x000e: {
+        'name': 'GPSTrackRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'T') {
+                return 'True direction';
+            } else if (ref === 'M') {
+                return 'Magnetic direction';
+            }
+            return 'Unknown';
+        }
+    },
+    0x000f: 'GPSTrack',
+    0x0010: {
+        'name': 'GPSImgDirectionRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'T') {
+                return 'True direction';
+            } else if (ref === 'M') {
+                return 'Magnetic direction';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0011: 'GPSImgDirection',
+    0x0012: 'GPSMapDatum',
+    0x0013: {
+        'name': 'GPSDestLatitudeRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'N') {
+                return 'North latitude';
+            } else if (ref === 'S') {
+                return 'South latitude';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0014: {
+        'name': 'GPSDestLatitude',
+        'description': (value) => {
+            return (value[0][0] / value[0][1]) + (value[1][0] / value[1][1]) / 60 + (value[2][0] / value[2][1]) / 3600;
+        }
+    },
+    0x0015: {
+        'name': 'GPSDestLongitudeRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'E') {
+                return 'East longitude';
+            } else if (ref === 'W') {
+                return 'West longitude';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0016: {
+        'name': 'GPSDestLongitude',
+        'description': (value) => {
+            return (value[0][0] / value[0][1]) + (value[1][0] / value[1][1]) / 60 + (value[2][0] / value[2][1]) / 3600;
+        }
+    },
+    0x0017: {
+        'name': 'GPSDestBearingRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'T') {
+                return 'True direction';
+            } else if (ref === 'M') {
+                return 'Magnetic direction';
+            }
+            return 'Unknown';
+        }
+    },
+    0x0018: 'GPSDestBearing',
+    0x0019: {
+        'name': 'GPSDestDistanceRef',
+        'description': (value) => {
+            const ref = value.join('');
+            if (ref === 'K') {
+                return 'Kilometers';
+            } else if (ref === 'M') {
+                return 'Miles';
+            } else if (ref === 'N') {
+                return 'Knots';
+            }
+            return 'Unknown';
+        }
+    },
+    0x001a: 'GPSDestDistance',
+    0x001b: {
+        'name': 'GPSProcessingMethod',
+        'description': getEncodedString
+    },
+    0x001c: {
+        'name': 'GPSAreaInformation',
+        'description': getEncodedString
+    },
+    0x001d: 'GPSDateStamp',
+    0x001e: {
+        'name': 'GPSDifferential',
+        'description': (value) => {
+            if (value === 0) {
+                return 'Measurement without differential correction';
+            } else if (value === 1) {
+                return 'Differential correction applied';
+            }
+            return 'Unknown';
+        }
+    },
+    0x001f: 'GPSHPositioningError'
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names-interoperability-ifd.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const tag_names_interoperability_ifd = ({
+    0x0001: 'InteroperabilityIndex',
+    0x0002: {
+        name: 'InteroperabilityVersion',
+        description: (value) => getStringValue(value)
+    },
+    0x1000: 'RelatedImageFileFormat',
+    0x1001: 'RelatedImageWidth',
+    0x1002: 'RelatedImageHeight'
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names-mpf-ifd.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const tag_names_mpf_ifd = ({
+    0xb000: {
+        'name': 'MPFVersion',
+        'description': (value) => getStringValue(value)
+    },
+    0xb001: 'NumberOfImages',
+    0xb002: 'MPEntry',
+    0xb003: 'ImageUIDList',
+    0xb004: 'TotalFrames'
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-names.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+
+
+
+const tagNames0thExifIfds = objectAssign({}, tag_names_0th_ifd, tag_names_exif_ifd);
+
+/* harmony default export */ const tag_names = ({
+    '0th': tagNames0thExifIfds,
+    'exif': tagNames0thExifIfds,
+    'gps': tag_names_gps_ifd,
+    'interoperability': tag_names_interoperability_ifd,
+    'mpf': constants.USE_MPF ? tag_names_mpf_ifd : {},
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tags.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+
+
+const EXIF_IFD_POINTER_KEY = 'Exif IFD Pointer';
+const GPS_INFO_IFD_POINTER_KEY = 'GPS Info IFD Pointer';
+const INTEROPERABILITY_IFD_POINTER_KEY = 'Interoperability IFD Pointer';
+
+const getTagValueAt = {
+    1: types.getByteAt,
+    2: types.getAsciiAt,
+    3: types.getShortAt,
+    4: types.getLongAt,
+    5: types.getRationalAt,
+    7: types.getUndefinedAt,
+    9: types.getSlongAt,
+    10: types.getSrationalAt,
+    13: types.getIfdPointerAt
+};
+
+/* harmony default export */ const src_tags = ({
+    read,
+    readMpf
+});
+
+function read(dataView, tiffHeaderOffset, includeUnknown) {
+    const byteOrder = byte_order.getByteOrder(dataView, tiffHeaderOffset);
+    let tags = read0thIfd(dataView, tiffHeaderOffset, byteOrder, includeUnknown);
+    tags = readExifIfd(tags, dataView, tiffHeaderOffset, byteOrder, includeUnknown);
+    tags = readGpsIfd(tags, dataView, tiffHeaderOffset, byteOrder, includeUnknown);
+    tags = readInteroperabilityIfd(tags, dataView, tiffHeaderOffset, byteOrder, includeUnknown);
+
+    return tags;
+}
+
+function read0thIfd(dataView, tiffHeaderOffset, byteOrder, includeUnknown) {
+    return readIfd(dataView, '0th', tiffHeaderOffset, get0thIfdOffset(dataView, tiffHeaderOffset, byteOrder), byteOrder, includeUnknown);
+}
+
+function get0thIfdOffset(dataView, tiffHeaderOffset, byteOrder) {
+    return tiffHeaderOffset + types.getLongAt(dataView, tiffHeaderOffset + 4, byteOrder);
+}
+
+function readExifIfd(tags, dataView, tiffHeaderOffset, byteOrder, includeUnknown) {
+    if (tags[EXIF_IFD_POINTER_KEY] !== undefined) {
+        return objectAssign(tags, readIfd(dataView, 'exif', tiffHeaderOffset, tiffHeaderOffset + tags[EXIF_IFD_POINTER_KEY].value, byteOrder, includeUnknown));
+    }
+
+    return tags;
+}
+
+function readGpsIfd(tags, dataView, tiffHeaderOffset, byteOrder, includeUnknown) {
+    if (tags[GPS_INFO_IFD_POINTER_KEY] !== undefined) {
+        return objectAssign(tags, readIfd(dataView, 'gps', tiffHeaderOffset, tiffHeaderOffset + tags[GPS_INFO_IFD_POINTER_KEY].value, byteOrder, includeUnknown));
+    }
+
+    return tags;
+}
+
+function readInteroperabilityIfd(tags, dataView, tiffHeaderOffset, byteOrder, includeUnknown) {
+    if (tags[INTEROPERABILITY_IFD_POINTER_KEY] !== undefined) {
+        return objectAssign(tags, readIfd(dataView, 'interoperability', tiffHeaderOffset, tiffHeaderOffset + tags[INTEROPERABILITY_IFD_POINTER_KEY].value, byteOrder, includeUnknown));
+    }
+
+    return tags;
+}
+
+function readMpf(dataView, dataOffset, includeUnknown) {
+    const byteOrder = byte_order.getByteOrder(dataView, dataOffset);
+    const tags = readIfd(dataView, 'mpf', dataOffset, get0thIfdOffset(dataView, dataOffset, byteOrder), byteOrder, includeUnknown);
+    return addMpfImages(dataView, dataOffset, tags, byteOrder);
+}
+
+function addMpfImages(dataView, dataOffset, tags, byteOrder) {
+    const ENTRY_SIZE = 16;
+
+    if (!tags['MPEntry']) {
+        return tags;
+    }
+
+    const images = [];
+    for (let i = 0; i < Math.ceil(tags['MPEntry'].value.length / ENTRY_SIZE); i++) {
+        images[i] = {};
+
+        const attributes = getImageNumberValue(tags['MPEntry'].value, i * ENTRY_SIZE, types.getTypeSize('LONG'), byteOrder);
+        images[i]['ImageFlags'] = getImageFlags(attributes);
+        images[i]['ImageFormat'] = getImageFormat(attributes);
+        images[i]['ImageType'] = getImageType(attributes);
+
+        const imageSize = getImageNumberValue(tags['MPEntry'].value, i * ENTRY_SIZE + 4, types.getTypeSize('LONG'), byteOrder);
+        images[i]['ImageSize'] = {
+            value: imageSize,
+            description: '' + imageSize
+        };
+
+        const imageOffset = isFirstIndividualImage(i) ? 0 : getImageNumberValue(tags['MPEntry'].value, i * ENTRY_SIZE + 8, types.getTypeSize('LONG'), byteOrder) + dataOffset;
+        images[i]['ImageOffset'] = {
+            value: imageOffset,
+            description: '' + imageOffset
+        };
+
+        const dependentImage1EntryNumber =
+            getImageNumberValue(tags['MPEntry'].value, i * ENTRY_SIZE + 12, types.getTypeSize('SHORT'), byteOrder);
+        images[i]['DependentImage1EntryNumber'] = {
+            value: dependentImage1EntryNumber,
+            description: '' + dependentImage1EntryNumber
+        };
+
+        const dependentImage2EntryNumber =
+            getImageNumberValue(tags['MPEntry'].value, i * ENTRY_SIZE + 14, types.getTypeSize('SHORT'), byteOrder);
+        images[i]['DependentImage2EntryNumber'] = {
+            value: dependentImage2EntryNumber,
+            description: '' + dependentImage2EntryNumber
+        };
+
+        images[i].image = dataView.buffer.slice(imageOffset, imageOffset + imageSize);
+        deferInit(images[i], 'base64', function () {
+            return getBase64Image(this.image);
+        });
+    }
+
+    tags['Images'] = images;
+
+    return tags;
+}
+
+function getImageNumberValue(entries, offset, size, byteOrder) {
+    if (byteOrder === byte_order.LITTLE_ENDIAN) {
+        let value = 0;
+        for (let i = 0; i < size; i++) {
+            value += entries[offset + i] << (8 * i);
+        }
+        return value;
+    }
+
+    let value = 0;
+    for (let i = 0; i < size; i++) {
+        value += entries[offset + i] << (8 * (size - 1 - i));
+    }
+    return value;
+}
+
+function getImageFlags(attributes) {
+    const flags = [
+        (attributes >> 31) & 0x1,
+        (attributes >> 30) & 0x1,
+        (attributes >> 29) & 0x1
+    ];
+
+    const flagsDescription = [];
+
+    if (flags[0]) {
+        flagsDescription.push('Dependent Parent Image');
+    }
+    if (flags[1]) {
+        flagsDescription.push('Dependent Child Image');
+    }
+    if (flags[2]) {
+        flagsDescription.push('Representative Image');
+    }
+
+    return {
+        value: flags,
+        description: flagsDescription.join(', ') || 'None'
+    };
+}
+
+function getImageFormat(attributes) {
+    const imageFormat = attributes >> 24 & 0x7;
+    return {
+        value: imageFormat,
+        description: imageFormat === 0 ? 'JPEG' : 'Unknown'
+    };
+}
+
+function getImageType(attributes) {
+    const type = attributes & 0xffffff;
+    const descriptions = {
+        0x30000: 'Baseline MP Primary Image',
+        0x10001: 'Large Thumbnail (VGA equivalent)',
+        0x10002: 'Large Thumbnail (Full HD equivalent)',
+        0x20001: 'Multi-Frame Image (Panorama)',
+        0x20002: 'Multi-Frame Image (Disparity)',
+        0x20003: 'Multi-Frame Image (Multi-Angle)',
+        0x0: 'Undefined',
+    };
+
+    return {
+        value: type,
+        description: descriptions[type] || 'Unknown'
+    };
+}
+
+function isFirstIndividualImage(i) {
+    return i === 0;
+}
+
+function readIfd(dataView, ifdType, tiffHeaderOffset, offset, byteOrder, includeUnknown) {
+    const FIELD_COUNT_SIZE = types.getTypeSize('SHORT');
+    const FIELD_SIZE = 12;
+
+    const tags = {};
+    const numberOfFields = getNumberOfFields(dataView, offset, byteOrder);
+
+    offset += FIELD_COUNT_SIZE;
+    for (let fieldIndex = 0; fieldIndex < numberOfFields; fieldIndex++) {
+        if (offset + FIELD_SIZE > dataView.byteLength) {
+            break;
+        }
+
+        const tag = readTag(dataView, ifdType, tiffHeaderOffset, offset, byteOrder, includeUnknown);
+        if (tag !== undefined) {
+            tags[tag.name] = {
+                'id': tag.id,
+                'value': tag.value,
+                'description': tag.description
+            };
+        }
+
+        offset += FIELD_SIZE;
+    }
+
+    if (constants.USE_THUMBNAIL && (offset < dataView.byteLength - types.getTypeSize('LONG'))) {
+        const nextIfdOffset = types.getLongAt(dataView, offset, byteOrder);
+        if (nextIfdOffset !== 0) {
+            tags['Thumbnail'] = readIfd(dataView, ifdType, tiffHeaderOffset, tiffHeaderOffset + nextIfdOffset, byteOrder, true);
+        }
+    }
+
+    return tags;
+}
+
+function getNumberOfFields(dataView, offset, byteOrder) {
+    if (offset + types.getTypeSize('SHORT') <= dataView.byteLength) {
+        return types.getShortAt(dataView, offset, byteOrder);
+    }
+    return 0;
+}
+
+function readTag(dataView, ifdType, tiffHeaderOffset, offset, byteOrder, includeUnknown) {
+    const TAG_CODE_IPTC_NAA = 0x83bb;
+    const TAG_TYPE_OFFSET = types.getTypeSize('SHORT');
+    const TAG_COUNT_OFFSET = TAG_TYPE_OFFSET + types.getTypeSize('SHORT');
+    const TAG_VALUE_OFFSET = TAG_COUNT_OFFSET + types.getTypeSize('LONG');
+
+    const tagCode = types.getShortAt(dataView, offset, byteOrder);
+    const tagType = types.getShortAt(dataView, offset + TAG_TYPE_OFFSET, byteOrder);
+    const tagCount = types.getLongAt(dataView, offset + TAG_COUNT_OFFSET, byteOrder);
+    let tagValue;
+
+    if (types.typeSizes[tagType] === undefined || (!includeUnknown && tag_names[ifdType][tagCode] === undefined)) {
+        return undefined;
+    }
+
+    if (tagValueFitsInOffsetSlot(tagType, tagCount)) {
+        tagValue = getTagValue(dataView, offset + TAG_VALUE_OFFSET, tagType, tagCount, byteOrder);
+    } else {
+        const tagValueOffset = types.getLongAt(dataView, offset + TAG_VALUE_OFFSET, byteOrder);
+        if (tagValueFitsInDataView(dataView, tiffHeaderOffset, tagValueOffset, tagType, tagCount)) {
+            const forceByteType = tagCode === TAG_CODE_IPTC_NAA;
+            tagValue = getTagValue(dataView, tiffHeaderOffset + tagValueOffset, tagType, tagCount, byteOrder, forceByteType);
+        } else {
+            tagValue = '<faulty value>';
+        }
+    }
+
+    if (tagType === types.tagTypes.ASCII) {
+        tagValue = splitNullSeparatedAsciiString(tagValue);
+        tagValue = decodeAsciiValue(tagValue);
+    }
+
+    let tagName = `undefined-${tagCode}`;
+    let tagDescription = tagValue;
+
+    if (tag_names[ifdType][tagCode] !== undefined) {
+        if ((tag_names[ifdType][tagCode]['name'] !== undefined) && (tag_names[ifdType][tagCode]['description'] !== undefined)) {
+            tagName = tag_names[ifdType][tagCode]['name'];
+            try {
+                tagDescription = tag_names[ifdType][tagCode]['description'](tagValue);
+            } catch (error) {
+                tagDescription = getDescriptionFromTagValue(tagValue);
+            }
+        } else if ((tagType === types.tagTypes.RATIONAL) || (tagType === types.tagTypes.SRATIONAL)) {
+            tagName = tag_names[ifdType][tagCode];
+            tagDescription = '' + (tagValue[0] / tagValue[1]);
+        } else {
+            tagName = tag_names[ifdType][tagCode];
+            tagDescription = getDescriptionFromTagValue(tagValue);
+        }
+    }
+
+    return {
+        id: tagCode,
+        name: tagName,
+        value: tagValue,
+        description: tagDescription
+    };
+}
+
+function tagValueFitsInOffsetSlot(tagType, tagCount) {
+    return types.typeSizes[tagType] * tagCount <= types.getTypeSize('LONG');
+}
+
+function getTagValue(dataView, offset, type, count, byteOrder, forceByteType = false) {
+    let value = [];
+
+    if (forceByteType) {
+        count = count * types.typeSizes[type];
+        type = types.tagTypes.BYTE;
+    }
+    for (let valueIndex = 0; valueIndex < count; valueIndex++) {
+        value.push(getTagValueAt[type](dataView, offset, byteOrder));
+        offset += types.typeSizes[type];
+    }
+
+    if (type === types.tagTypes.ASCII) {
+        value = types.getAsciiValue(value);
+    } else if (value.length === 1) {
+        value = value[0];
+    }
+
+    return value;
+}
+
+function tagValueFitsInDataView(dataView, tiffHeaderOffset, tagValueOffset, tagType, tagCount) {
+    return tiffHeaderOffset + tagValueOffset + types.typeSizes[tagType] * tagCount <= dataView.byteLength;
+}
+
+function splitNullSeparatedAsciiString(string) {
+    const tagValue = [];
+    let i = 0;
+
+    for (let j = 0; j < string.length; j++) {
+        if (string[j] === '\x00') {
+            i++;
+            continue;
+        }
+        if (tagValue[i] === undefined) {
+            tagValue[i] = '';
+        }
+        tagValue[i] += string[j];
+    }
+
+    return tagValue;
+}
+
+function decodeAsciiValue(asciiValue) {
+    try {
+        return asciiValue.map((value) => decodeURIComponent(escape(value)));
+    } catch (error) {
+        return asciiValue;
+    }
+}
+
+function getDescriptionFromTagValue(tagValue) {
+    if (tagValue instanceof Array) {
+        return tagValue.join(', ');
+    }
+    return tagValue;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/file-tags.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const file_tags = ({
+    read: file_tags_read
+});
+
+function file_tags_read(dataView, fileDataOffset) {
+    const length = getLength(dataView, fileDataOffset);
+    const numberOfColorComponents = getNumberOfColorComponents(dataView, fileDataOffset, length);
+    return {
+        'Bits Per Sample': getDataPrecision(dataView, fileDataOffset, length),
+        'Image Height': getImageHeight(dataView, fileDataOffset, length),
+        'Image Width': getImageWidth(dataView, fileDataOffset, length),
+        'Color Components': numberOfColorComponents,
+        'Subsampling': numberOfColorComponents && getSubsampling(dataView, fileDataOffset, numberOfColorComponents.value, length)
+    };
+}
+
+function getLength(dataView, fileDataOffset) {
+    return types.getShortAt(dataView, fileDataOffset);
+}
+
+function getDataPrecision(dataView, fileDataOffset, length) {
+    const OFFSET = 2;
+    const SIZE = 1;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: '' + value
+    };
+}
+
+function getImageHeight(dataView, fileDataOffset, length) {
+    const OFFSET = 3;
+    const SIZE = 2;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getShortAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: `${value}px`
+    };
+}
+
+function getImageWidth(dataView, fileDataOffset, length) {
+    const OFFSET = 5;
+    const SIZE = 2;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getShortAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: `${value}px`
+    };
+}
+
+function getNumberOfColorComponents(dataView, fileDataOffset, length) {
+    const OFFSET = 7;
+    const SIZE = 1;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: '' + value
+    };
+}
+
+function getSubsampling(dataView, fileDataOffset, numberOfColorComponents, length) {
+    const OFFSET = 8;
+    const SIZE = 3 * numberOfColorComponents;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const components = [];
+
+    for (let i = 0; i < numberOfColorComponents; i++) {
+        const componentOffset = fileDataOffset + OFFSET + i * 3;
+        components.push([
+            types.getByteAt(dataView, componentOffset),
+            types.getByteAt(dataView, componentOffset + 1),
+            types.getByteAt(dataView, componentOffset + 2)
+        ]);
+    }
+
+    return {
+        value: components,
+        description: components.length > 1 ? getComponentIds(components) + getSamplingType(components) : ''
+    };
+}
+
+function getComponentIds(components) {
+    const ids = {
+        0x01: 'Y',
+        0x02: 'Cb',
+        0x03: 'Cr',
+        0x04: 'I',
+        0x05: 'Q',
+    };
+
+    return components.map((compontent) => ids[compontent[0]]).join('');
+}
+
+function getSamplingType(components) {
+    const types = {
+        0x11: '4:4:4 (1 1)',
+        0x12: '4:4:0 (1 2)',
+        0x14: '4:4:1 (1 4)',
+        0x21: '4:2:2 (2 1)',
+        0x22: '4:2:0 (2 2)',
+        0x24: '4:2:1 (2 4)',
+        0x41: '4:1:1 (4 1)',
+        0x42: '4:1:0 (4 2)'
+    };
+
+    if (components.length === 0 || components[0][1] === undefined || types[components[0][1]] === undefined) {
+        return '';
+    }
+
+    return types[components[0][1]];
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/jfif-tags.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const jfif_tags = ({
+    read: jfif_tags_read
+});
+
+function jfif_tags_read(dataView, jfifDataOffset) {
+    const length = jfif_tags_getLength(dataView, jfifDataOffset);
+    const thumbnailWidth = getThumbnailWidth(dataView, jfifDataOffset, length);
+    const thumbnailHeight = getThumbnailHeight(dataView, jfifDataOffset, length);
+    const tags = {
+        'JFIF Version': getVersion(dataView, jfifDataOffset, length),
+        'Resolution Unit': getResolutionUnit(dataView, jfifDataOffset, length),
+        'XResolution': getXResolution(dataView, jfifDataOffset, length),
+        'YResolution': getYResolution(dataView, jfifDataOffset, length),
+        'JFIF Thumbnail Width': thumbnailWidth,
+        'JFIF Thumbnail Height': thumbnailHeight
+    };
+
+    if (thumbnailWidth !== undefined && thumbnailHeight !== undefined) {
+        const thumbnail = getThumbnail(dataView, jfifDataOffset, 3 * thumbnailWidth.value * thumbnailHeight.value, length);
+        if (thumbnail) {
+            tags['JFIF Thumbnail'] = thumbnail;
+        }
+    }
+
+    for (const tagName in tags) {
+        if (tags[tagName] === undefined) {
+            delete tags[tagName];
+        }
+    }
+
+    return tags;
+}
+
+function jfif_tags_getLength(dataView, jfifDataOffset) {
+    return types.getShortAt(dataView, jfifDataOffset);
+}
+
+function getVersion(dataView, jfifDataOffset, length) {
+    const OFFSET = 7;
+    const SIZE = 2;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const majorVersion = types.getByteAt(dataView, jfifDataOffset + OFFSET);
+    const minorVersion = types.getByteAt(dataView, jfifDataOffset + OFFSET + 1);
+    return {
+        value: majorVersion * 0x100 + minorVersion,
+        description: majorVersion + '.' + minorVersion
+    };
+}
+
+function getResolutionUnit(dataView, jfifDataOffset, length) {
+    const OFFSET = 9;
+    const SIZE = 1;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, jfifDataOffset + OFFSET);
+    return {
+        value,
+        description: getResolutionUnitDescription(value)
+    };
+}
+
+function getResolutionUnitDescription(value) {
+    if (value === 0) {
+        return 'None';
+    }
+    if (value === 1) {
+        return 'inches';
+    }
+    if (value === 2) {
+        return 'cm';
+    }
+    return 'Unknown';
+}
+
+function getXResolution(dataView, jfifDataOffset, length) {
+    const OFFSET = 10;
+    const SIZE = 2;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getShortAt(dataView, jfifDataOffset + OFFSET);
+    return {
+        value,
+        description: '' + value
+    };
+}
+
+function getYResolution(dataView, jfifDataOffset, length) {
+    const OFFSET = 12;
+    const SIZE = 2;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getShortAt(dataView, jfifDataOffset + OFFSET);
+    return {
+        value,
+        description: '' + value
+    };
+}
+
+function getThumbnailWidth(dataView, jfifDataOffset, length) {
+    const OFFSET = 14;
+    const SIZE = 1;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, jfifDataOffset + OFFSET);
+    return {
+        value,
+        description: `${value}px`
+    };
+}
+
+function getThumbnailHeight(dataView, jfifDataOffset, length) {
+    const OFFSET = 15;
+    const SIZE = 1;
+
+    if (OFFSET + SIZE > length) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, jfifDataOffset + OFFSET);
+    return {
+        value,
+        description: `${value}px`
+    };
+}
+
+function getThumbnail(dataView, jfifDataOffset, thumbnailLength, length) {
+    const OFFSET = 16;
+
+    if (thumbnailLength === 0 || OFFSET + thumbnailLength > length) {
+        return undefined;
+    }
+
+    const value = dataView.buffer.slice(jfifDataOffset + OFFSET, jfifDataOffset + OFFSET + thumbnailLength);
+    return {
+        value,
+        description: '<24-bit RGB pixel data>'
+    };
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/iptc-tag-names.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const iptc_tag_names = ({
+    'iptc': {
+        0x0100: {
+            'name': 'Model Version',
+            'description': (value) => {
+                return ((value[0] << 8) + value[1]).toString();
+            }
+        },
+        0x0105: {
+            'name': 'Destination',
+            'repeatable': true
+        },
+        0x0114: {
+            'name': 'File Format',
+            'description': (value) => {
+                return ((value[0] << 8) + value[1]).toString();
+            }
+        },
+        0x0116: {
+            'name': 'File Format Version',
+            'description': (value) => {
+                return ((value[0] << 8) + value[1]).toString();
+            }
+        },
+        0x011e: 'Service Identifier',
+        0x0128: 'Envelope Number',
+        0x0132: 'Product ID',
+        0x013c: 'Envelope Priority',
+        0x0146: {
+            'name': 'Date Sent',
+            'description': getCreationDate
+        },
+        0x0150: {
+            'name': 'Time Sent',
+            'description': getCreationTime
+        },
+        0x015a: {
+            'name': 'Coded Character Set',
+            'description': getEncodingName,
+            'encoding_name': getEncodingName,
+        },
+        0x0164: 'UNO',
+        0x0178: {
+            'name': 'ARM Identifier',
+            'description': (value) => {
+                return ((value[0] << 8) + value[1]).toString();
+            }
+        },
+        0x017a: {
+            'name': 'ARM Version',
+            'description': (value) => {
+                return ((value[0] << 8) + value[1]).toString();
+            }
+        },
+        0x0200: {
+            'name': 'Record Version',
+            'description': (value) => {
+                return ((value[0] << 8) + value[1]).toString();
+            }
+        },
+        0x0203: 'Object Type Reference',
+        0x0204: 'Object Attribute Reference',
+        0x0205: 'Object Name',
+        0x0207: 'Edit Status',
+        0x0208: {
+            'name': 'Editorial Update',
+            'description': (value) => {
+                if (getStringValue(value) === '01') {
+                    return 'Additional Language';
+                }
+                return 'Unknown';
+            }
+        },
+        0x020a: 'Urgency',
+        0x020c: {
+            'name': 'Subject Reference',
+            'repeatable': true,
+            'description': (value) => {
+                const parts = getStringValue(value).split(':');
+                return parts[2] + (parts[3] ? '/' + parts[3] : '') + (parts[4] ? '/' + parts[4] : '');
+            }
+        },
+        0x020f: 'Category',
+        0x0214: {
+            'name': 'Supplemental Category',
+            'repeatable': true
+        },
+        0x0216: 'Fixture Identifier',
+        0x0219: {
+            'name': 'Keywords',
+            'repeatable': true
+        },
+        0x021a: {
+            'name': 'Content Location Code',
+            'repeatable': true
+        },
+        0x021b: {
+            'name': 'Content Location Name',
+            'repeatable': true
+        },
+        0x021e: 'Release Date',
+        0x0223: 'Release Time',
+        0x0225: 'Expiration Date',
+        0x0226: 'Expiration Time',
+        0x0228: 'Special Instructions',
+        0x022a: {
+            'name': 'Action Advised',
+            'description': (value) => {
+                const string = getStringValue(value);
+                if (string === '01') {
+                    return 'Object Kill';
+                } else if (string === '02') {
+                    return 'Object Replace';
+                } else if (string === '03') {
+                    return 'Object Append';
+                } else if (string === '04') {
+                    return 'Object Reference';
+                }
+                return 'Unknown';
+            }
+        },
+        0x022d: {
+            'name': 'Reference Service',
+            'repeatable': true
+        },
+        0x022f: {
+            'name': 'Reference Date',
+            'repeatable': true
+        },
+        0x0232: {
+            'name': 'Reference Number',
+            'repeatable': true
+        },
+        0x0237: {
+            'name': 'Date Created',
+            'description': getCreationDate
+        },
+        0x023c: {
+            'name': 'Time Created',
+            'description': getCreationTime
+        },
+        0x023e: {
+            'name': 'Digital Creation Date',
+            'description': getCreationDate
+        },
+        0x023f: {
+            'name': 'Digital Creation Time',
+            'description': getCreationTime
+        },
+        0x0241: 'Originating Program',
+        0x0246: 'Program Version',
+        0x024b: {
+            'name': 'Object Cycle',
+            'description': (value) => {
+                const string = getStringValue(value);
+                if (string === 'a') {
+                    return 'morning';
+                } else if (string === 'p') {
+                    return 'evening';
+                } else if (string === 'b') {
+                    return 'both';
+                }
+                return 'Unknown';
+            }
+        },
+        0x0250: {
+            'name': 'By-line',
+            'repeatable': true
+        },
+        0x0255: {
+            'name': 'By-line Title',
+            'repeatable': true
+        },
+        0x025a: 'City',
+        0x025c: 'Sub-location',
+        0x025f: 'Province/State',
+        0x0264: 'Country/Primary Location Code',
+        0x0265: 'Country/Primary Location Name',
+        0x0267: 'Original Transmission Reference',
+        0x0269: 'Headline',
+        0x026e: 'Credit',
+        0x0273: 'Source',
+        0x0274: 'Copyright Notice',
+        0x0276: {
+            'name': 'Contact',
+            'repeatable': true
+        },
+        0x0278: 'Caption/Abstract',
+        0x027a: {
+            'name': 'Writer/Editor',
+            'repeatable': true
+        },
+        0x027d: {
+            'name': 'Rasterized Caption',
+            'description': (value) => value
+        },
+        0x0282: 'Image Type',
+        0x0283: {
+            'name': 'Image Orientation',
+            'description': (value) => {
+                const string = getStringValue(value);
+                if (string === 'P') {
+                    return 'Portrait';
+                } else if (string === 'L') {
+                    return 'Landscape';
+                } else if (string === 'S') {
+                    return 'Square';
+                }
+                return 'Unknown';
+            }
+        },
+        0x0287: 'Language Identifier',
+        0x0296: {
+            'name': 'Audio Type',
+            'description': (value) => {
+                const stringValue = getStringValue(value);
+                const character0 = stringValue.charAt(0);
+                const character1 = stringValue.charAt(1);
+                let description = '';
+
+                if (character0 === '1') {
+                    description += 'Mono';
+                } else if (character0 === '2') {
+                    description += 'Stereo';
+                }
+
+                if (character1 === 'A') {
+                    description += ', actuality';
+                } else if (character1 === 'C') {
+                    description += ', question and answer session';
+                } else if (character1 === 'M') {
+                    description += ', music, transmitted by itself';
+                } else if (character1 === 'Q') {
+                    description += ', response to a question';
+                } else if (character1 === 'R') {
+                    description += ', raw sound';
+                } else if (character1 === 'S') {
+                    description += ', scener';
+                } else if (character1 === 'V') {
+                    description += ', voicer';
+                } else if (character1 === 'W') {
+                    description += ', wrap';
+                }
+
+                if (description !== '') {
+                    return description;
+                }
+                return stringValue;
+            }
+        },
+        0x0297: {
+            'name': 'Audio Sampling Rate',
+            'description': (value) => parseInt(getStringValue(value), 10) + ' Hz'
+        },
+        0x0298: {
+            'name': 'Audio Sampling Resolution',
+            'description': (value) => {
+                const bits = parseInt(getStringValue(value), 10);
+                return bits + (bits === 1 ? ' bit' : ' bits');
+            }
+        },
+        0x0299: {
+            'name': 'Audio Duration',
+            'description': (value) => {
+                const duration = getStringValue(value);
+                if (duration.length >= 6) {
+                    return duration.substr(0, 2) + ':' + duration.substr(2, 2) + ':' + duration.substr(4, 2);
+                }
+                return duration;
+            }
+        },
+        0x029a: 'Audio Outcue',
+        0x02ba: 'Short Document ID',
+        0x02bb: 'Unique Document ID',
+        0x02bc: 'Owner ID',
+        0x02c8: {
+            'name': (value) => {
+                if (value.length === 2) {
+                    return 'ObjectData Preview File Format';
+                }
+                return 'Record 2 destination';
+            },
+            'description': (value) => {
+                if (value.length === 2) {
+                    const intValue = (value[0] << 8) + value[1];
+                    if (intValue === 0) {
+                        return 'No ObjectData';
+                    } else if (intValue === 1) {
+                        return 'IPTC-NAA Digital Newsphoto Parameter Record';
+                    } else if (intValue === 2) {
+                        return 'IPTC7901 Recommended Message Format';
+                    } else if (intValue === 3) {
+                        return 'Tagged Image File Format (Adobe/Aldus Image data)';
+                    } else if (intValue === 4) {
+                        return 'Illustrator (Adobe Graphics data)';
+                    } else if (intValue === 5) {
+                        return 'AppleSingle (Apple Computer Inc)';
+                    } else if (intValue === 6) {
+                        return 'NAA 89-3 (ANPA 1312)';
+                    } else if (intValue === 7) {
+                        return 'MacBinary II';
+                    } else if (intValue === 8) {
+                        return 'IPTC Unstructured Character Oriented File Format (UCOFF)';
+                    } else if (intValue === 9) {
+                        return 'United Press International ANPA 1312 variant';
+                    } else if (intValue === 10) {
+                        return 'United Press International Down-Load Message';
+                    } else if (intValue === 11) {
+                        return 'JPEG File Interchange (JFIF)';
+                    } else if (intValue === 12) {
+                        return 'Photo-CD Image-Pac (Eastman Kodak)';
+                    } else if (intValue === 13) {
+                        return 'Microsoft Bit Mapped Graphics File [*.BMP]';
+                    } else if (intValue === 14) {
+                        return 'Digital Audio File [*.WAV] (Microsoft & Creative Labs)';
+                    } else if (intValue === 15) {
+                        return 'Audio plus Moving Video [*.AVI] (Microsoft)';
+                    } else if (intValue === 16) {
+                        return 'PC DOS/Windows Executable Files [*.COM][*.EXE]';
+                    } else if (intValue === 17) {
+                        return 'Compressed Binary File [*.ZIP] (PKWare Inc)';
+                    } else if (intValue === 18) {
+                        return 'Audio Interchange File Format AIFF (Apple Computer Inc)';
+                    } else if (intValue === 19) {
+                        return 'RIFF Wave (Microsoft Corporation)';
+                    } else if (intValue === 20) {
+                        return 'Freehand (Macromedia/Aldus)';
+                    } else if (intValue === 21) {
+                        return 'Hypertext Markup Language "HTML" (The Internet Society)';
+                    } else if (intValue === 22) {
+                        return 'MPEG 2 Audio Layer 2 (Musicom), ISO/IEC';
+                    } else if (intValue === 23) {
+                        return 'MPEG 2 Audio Layer 3, ISO/IEC';
+                    } else if (intValue === 24) {
+                        return 'Portable Document File (*.PDF) Adobe';
+                    } else if (intValue === 25) {
+                        return 'News Industry Text Format (NITF)';
+                    } else if (intValue === 26) {
+                        return 'Tape Archive (*.TAR)';
+                    } else if (intValue === 27) {
+                        return 'Tidningarnas Telegrambyrå NITF version (TTNITF DTD)';
+                    } else if (intValue === 28) {
+                        return 'Ritzaus Bureau NITF version (RBNITF DTD)';
+                    } else if (intValue === 29) {
+                        return 'Corel Draw [*.CDR]';
+                    }
+                    return `Unknown format ${intValue}`;
+                }
+                return getStringValue(value);
+            }
+        },
+        0x02c9: {
+            'name': 'ObjectData Preview File Format Version',
+            'description': (value, tags) => {
+                // Format ID, Version ID, Version Description
+                const formatVersions = {
+                    '00': {'00': '1'},
+                    '01': {'01': '1', '02': '2', '03': '3', '04': '4'},
+                    '02': {'04': '4'},
+                    '03': {'01': '5.0', '02': '6.0'},
+                    '04': {'01': '1.40'},
+                    '05': {'01': '2'},
+                    '06': {'01': '1'},
+                    '11': {'01': '1.02'},
+                    '20': {'01': '3.1', '02': '4.0', '03': '5.0', '04': '5.5'},
+                    '21': {'02': '2.0'}
+                };
+                const stringValue = getStringValue(value);
+
+                if (tags['ObjectData Preview File Format']) {
+                    const objectDataPreviewFileFormat = getStringValue(tags['ObjectData Preview File Format'].value);
+                    if (formatVersions[objectDataPreviewFileFormat]
+                        && formatVersions[objectDataPreviewFileFormat][stringValue]) {
+                        return formatVersions[objectDataPreviewFileFormat][stringValue];
+                    }
+                }
+
+                return stringValue;
+            }
+        },
+        0x02ca: 'ObjectData Preview Data',
+        0x070a: {
+            'name': 'Size Mode',
+            'description': (value) => {
+                return (value[0]).toString();
+            }
+        },
+        0x0714: {
+            'name': 'Max Subfile Size',
+            'description': (value) => {
+                let n = 0;
+                for (let i = 0; i < value.length; i++) {
+                    n = (n << 8) + value[i];
+                }
+                return n.toString();
+            }
+        },
+        0x075a: {
+            'name': 'ObjectData Size Announced',
+            'description': (value) => {
+                let n = 0;
+                for (let i = 0; i < value.length; i++) {
+                    n = (n << 8) + value[i];
+                }
+                return n.toString();
+            }
+        },
+        0x075f: {
+            'name': 'Maximum ObjectData Size',
+            'description': (value) => {
+                let n = 0;
+                for (let i = 0; i < value.length; i++) {
+                    n = (n << 8) + value[i];
+                }
+                return n.toString();
+            }
+        }
+    }
+});
+
+function getCreationDate(value) {
+    const date = getStringValue(value);
+
+    if (date.length >= 8) {
+        return date.substr(0, 4) + '-' + date.substr(4, 2) + '-' + date.substr(6, 2);
+    }
+
+    return date;
+}
+
+function getCreationTime(value) {
+    const time = getStringValue(value);
+    let parsedTime = time;
+
+    if (time.length >= 6) {
+        parsedTime = time.substr(0, 2) + ':' + time.substr(2, 2) + ':' + time.substr(4, 2);
+        if (time.length === 11) {
+            parsedTime += time.substr(6, 1) + time.substr(7, 2) + ':' + time.substr(9, 2);
+        }
+    }
+
+    return parsedTime;
+}
+
+function getEncodingName(value) {
+    const string = getStringValue(value);
+    if (string === '\x1b%G') {
+        return 'UTF-8';
+    } else if (string === '\x1b%5') {
+        return 'Windows-1252';
+    } else if (string === '\x1b%/G') {
+        return 'UTF-8 Level 1';
+    } else if (string === '\x1b%/H') {
+        return 'UTF-8 Level 2';
+    } else if (string === '\x1b%/I') {
+        return 'UTF-8 Level 3';
+    } else if (string === '\x1B/A') {
+        return 'ISO-8859-1';
+    } else if (string === '\x1B/B') {
+        return 'ISO-8859-2';
+    } else if (string === '\x1B/C') {
+        return 'ISO-8859-3';
+    } else if (string === '\x1B/D') {
+        return 'ISO-8859-4';
+    } else if (string === '\x1B/@') {
+        return 'ISO-8859-5';
+    } else if (string === '\x1B/G') {
+        return 'ISO-8859-6';
+    } else if (string === '\x1B/F') {
+        return 'ISO-8859-7';
+    } else if (string === '\x1B/H') {
+        return 'ISO-8859-8';
+    }
+    return 'Unknown';
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/text-decoder.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* harmony default export */ const text_decoder = ({
+    get
+});
+
+function get() {
+    if (typeof TextDecoder !== 'undefined') {
+        return TextDecoder;
+    }
+
+    return undefined;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/tag-decoder.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+const TAG_HEADER_SIZE = 5;
+
+/* harmony default export */ const tag_decoder = ({
+    decode,
+    TAG_HEADER_SIZE
+});
+
+function decode(encoding, tagValue) {
+    const Decoder = text_decoder.get();
+    if ((typeof Decoder !== 'undefined') && (encoding !== undefined)) {
+        try {
+            return new Decoder(encoding).decode(Uint8Array.from(tagValue));
+        } catch (error) {
+            // Pass through and fall back to ASCII decoding.
+        }
+    }
+
+    const stringValue = tagValue.map((charCode) => String.fromCharCode(charCode)).join('');
+    return tag_decoder_decodeAsciiValue(stringValue);
+}
+
+function tag_decoder_decodeAsciiValue(asciiValue) {
+    try {
+        return decodeURIComponent(escape(asciiValue));
+    } catch (error) {
+        return asciiValue;
+    }
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/iptc-tags.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+const BYTES_8BIM = 0x3842494d;
+const BYTES_8BIM_SIZE = 4;
+const RESOURCE_BLOCK_HEADER_SIZE = BYTES_8BIM_SIZE + 8;
+const NAA_RESOURCE_BLOCK_TYPE = 0x0404;
+const iptc_tags_TAG_HEADER_SIZE = 5;
+
+/* harmony default export */ const iptc_tags = ({
+    read: iptc_tags_read
+});
+
+function iptc_tags_read(dataView, dataOffset, includeUnknown) {
+    try {
+        if (Array.isArray(dataView)) {
+            return parseTags(new DataView(Uint8Array.from(dataView).buffer), {size: dataView.length}, 0, includeUnknown);
+        }
+        const {naaBlock, dataOffset: newDataOffset} = getNaaResourceBlock(dataView, dataOffset);
+        return parseTags(dataView, naaBlock, newDataOffset, includeUnknown);
+    } catch (error) {
+        return {};
+    }
+}
+
+function getNaaResourceBlock(dataView, dataOffset) {
+    while (dataOffset + RESOURCE_BLOCK_HEADER_SIZE <= dataView.byteLength) {
+        const resourceBlock = getResourceBlock(dataView, dataOffset);
+        if (isNaaResourceBlock(resourceBlock)) {
+            return {naaBlock: resourceBlock, dataOffset: dataOffset + RESOURCE_BLOCK_HEADER_SIZE};
+        }
+        dataOffset += RESOURCE_BLOCK_HEADER_SIZE + resourceBlock.size + getBlockPadding(resourceBlock);
+    }
+    throw new Error('No IPTC NAA resource block.');
+}
+
+function getResourceBlock(dataView, dataOffset) {
+    const RESOURCE_BLOCK_SIZE_OFFSET = 10;
+
+    if (dataView.getUint32(dataOffset, false) !== BYTES_8BIM) {
+        throw new Error('Not an IPTC resource block.');
+    }
+
+    return {
+        type: dataView.getUint16(dataOffset + BYTES_8BIM_SIZE),
+        size: dataView.getUint16(dataOffset + RESOURCE_BLOCK_SIZE_OFFSET)
+    };
+}
+
+function isNaaResourceBlock(resourceBlock) {
+    return resourceBlock.type === NAA_RESOURCE_BLOCK_TYPE;
+}
+
+function getBlockPadding(resourceBlock) {
+    if (resourceBlock.size % 2 !== 0) {
+        return 1;
+    }
+    return 0;
+}
+
+function parseTags(dataView, naaBlock, dataOffset, includeUnknown) {
+    const tags = {};
+    let encoding = undefined;
+
+    const endOfBlockOffset = dataOffset + naaBlock['size'];
+
+    while ((dataOffset < endOfBlockOffset) && (dataOffset < dataView.byteLength)) {
+        const {tag, tagSize} = iptc_tags_readTag(dataView, dataOffset, tags, encoding, includeUnknown);
+
+        if (tag === null) {
+            break;
+        }
+
+        if (tag) {
+            if ('encoding' in tag) {
+                encoding = tag.encoding;
+            }
+
+            if ((tags[tag.name] === undefined) || (tag['repeatable'] === undefined)) {
+                tags[tag.name] = {
+                    id: tag.id,
+                    value: tag.value,
+                    description: tag.description
+                };
+            } else {
+                if (!(tags[tag.name] instanceof Array)) {
+                    tags[tag.name] = [{
+                        id: tags[tag.name].id,
+                        value: tags[tag.name].value,
+                        description: tags[tag.name].description
+                    }];
+                }
+                tags[tag.name].push({
+                    id: tag.id,
+                    value: tag.value,
+                    description: tag.description
+                });
+            }
+        }
+
+        dataOffset += iptc_tags_TAG_HEADER_SIZE + tagSize;
+    }
+
+    return tags;
+}
+
+function iptc_tags_readTag(dataView, dataOffset, tags, encoding, includeUnknown) {
+    const TAG_CODE_OFFSET = 1;
+    const TAG_SIZE_OFFSET = 3;
+
+    if (leadByteIsMissing(dataView, dataOffset)) {
+        return {tag: null, tagSize: 0};
+    }
+
+    const tagCode = dataView.getUint16(dataOffset + TAG_CODE_OFFSET);
+    const tagSize = dataView.getUint16(dataOffset + TAG_SIZE_OFFSET);
+
+    if (!includeUnknown && !iptc_tag_names.iptc[tagCode]) {
+        return {tag: undefined, tagSize};
+    }
+
+    const tagValue = iptc_tags_getTagValue(dataView, dataOffset + iptc_tags_TAG_HEADER_SIZE, tagSize);
+
+    const tag = {
+        id: tagCode,
+        name: getTagName(iptc_tag_names.iptc[tagCode], tagCode, tagValue),
+        value: tagValue,
+        description: getTagDescription(iptc_tag_names.iptc[tagCode], tagValue, tags, encoding)
+    };
+    if (tagIsRepeatable(tagCode)) {
+        tag['repeatable'] = true;
+    }
+    if (tagContainsEncoding(tagCode)) {
+        tag['encoding'] = iptc_tag_names.iptc[tagCode]['encoding_name'](tagValue);
+    }
+
+    return {tag, tagSize};
+}
+
+function leadByteIsMissing(dataView, dataOffset) {
+    const TAG_LEAD_BYTE = 0x1c;
+    return dataView.getUint8(dataOffset) !== TAG_LEAD_BYTE;
+}
+
+function iptc_tags_getTagValue(dataView, offset, size) {
+    const value = [];
+
+    for (let valueIndex = 0; valueIndex < size; valueIndex++) {
+        value.push(dataView.getUint8(offset + valueIndex));
+    }
+
+    return value;
+}
+
+function getTagName(tag, tagCode, tagValue) {
+    if (!tag) {
+        return `undefined-${tagCode}`;
+    }
+    if (tagIsName(tag)) {
+        return tag;
+    }
+    if (hasDynamicName(tag)) {
+        return tag['name'](tagValue);
+    }
+    return tag['name'];
+}
+
+function tagIsName(tag) {
+    return typeof tag === 'string';
+}
+
+function hasDynamicName(tag) {
+    return typeof (tag['name']) === 'function';
+}
+
+function getTagDescription(tag, tagValue, tags, encoding) {
+    if (hasDescriptionProperty(tag)) {
+        try {
+            return tag['description'](tagValue, tags);
+        } catch (error) {
+            // Fall through to next handler.
+        }
+    }
+    if (tagValueIsText(tag, tagValue)) {
+        return tag_decoder.decode(encoding, tagValue);
+    }
+    return tagValue;
+}
+
+function tagValueIsText(tag, tagValue) {
+    return tag && tagValue instanceof Array;
+}
+
+function hasDescriptionProperty(tag) {
+    return tag && tag['description'] !== undefined;
+}
+
+function tagIsRepeatable(tagCode) {
+    return iptc_tag_names.iptc[tagCode] && iptc_tag_names.iptc[tagCode]['repeatable'];
+}
+
+function tagContainsEncoding(tagCode) {
+    return iptc_tag_names.iptc[tagCode] && iptc_tag_names.iptc[tagCode]['encoding_name'] !== undefined;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/xmp-tag-names.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* harmony default export */ const xmp_tag_names = ({
+    'tiff:Orientation'(value) {
+        if (value === '1') {
+            return 'Horizontal (normal)';
+        }
+        if (value === '2') {
+            return 'Mirror horizontal';
+        }
+        if (value === '3') {
+            return 'Rotate 180';
+        }
+        if (value === '4') {
+            return 'Mirror vertical';
+        }
+        if (value === '5') {
+            return 'Mirror horizontal and rotate 270 CW';
+        }
+        if (value === '6') {
+            return 'Rotate 90 CW';
+        }
+        if (value === '7') {
+            return 'Mirror horizontal and rotate 90 CW';
+        }
+        if (value === '8') {
+            return 'Rotate 270 CW';
+        }
+        return value;
+    },
+    'exif:GPSLatitude': calculateGPSValue,
+    'exif:GPSLongitude': calculateGPSValue
+});
+
+function calculateGPSValue(value) {
+    const [degreesString, minutesString] = value.split(',');
+    if ((degreesString !== undefined) && (minutesString !== undefined)) {
+        const degrees = parseFloat(degreesString);
+        const minutes = parseFloat(minutesString);
+        const ref = minutesString.charAt(minutesString.length - 1);
+        if ((!Number.isNaN(degrees)) && (!Number.isNaN(minutes))) {
+            return '' + (degrees + minutes / 60) + ref;
+        }
+    }
+    return value;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/dom-parser.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* harmony default export */ const dom_parser = ({
+    get: dom_parser_get
+});
+
+function dom_parser_get() {
+    if (typeof DOMParser !== 'undefined') {
+        return DOMParser;
+    }
+    try {
+        return require('@xmldom/xmldom').DOMParser; // eslint-disable-line no-undef
+    } catch (error) {
+        return undefined;
+    }
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/xmp-tags.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+/* harmony default export */ const xmp_tags = ({
+    read: xmp_tags_read
+});
+
+function xmp_tags_read(dataView, chunks) {
+    if (typeof dataView === 'string') {
+        return readTags({}, dataView);
+    }
+    return extractCompleteChunks(dataView, chunks).reduce(readTags, {});
+}
+
+// The first chunk is always the regular XMP document. Then there is something
+// called extended XMP. The extended XMP is also a single XMP document but it
+// can be divided into multiple chunks that need to be combined into one.
+function extractCompleteChunks(dataView, chunks) {
+    if (chunks.length === 0) {
+        return [];
+    }
+
+    const completeChunks = [combineChunks(dataView, chunks.slice(0, 1))];
+    if (chunks.length > 1) {
+        completeChunks.push(combineChunks(dataView, chunks.slice(1)));
+    }
+
+    return completeChunks;
+}
+
+function combineChunks(dataView, chunks) {
+    const totalLength = chunks.reduce((size, chunk) => size + chunk.length, 0);
+    const combinedChunks = new Uint8Array(totalLength);
+    let offset = 0;
+
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const slice = dataView.buffer.slice(chunk.dataOffset, chunk.dataOffset + chunk.length);
+        combinedChunks.set(new Uint8Array(slice), offset);
+        offset += chunk.length;
+    }
+
+    return new DataView(combinedChunks.buffer);
+}
+
+function readTags(tags, chunkDataView) {
+    try {
+        const {doc, raw} = getDocument(chunkDataView);
+        tags._raw = (tags._raw || '') + raw;
+        const rdf = getRDF(doc);
+
+        return objectAssign(tags, parseXMPObject(convertToObject(rdf, true)));
+    } catch (error) {
+        return tags;
+    }
+}
+
+function getDocument(chunkDataView) {
+    const Parser = dom_parser.get();
+    if (!Parser) {
+        console.warn('Warning: DOMParser is not available. It is needed to be able to parse XMP tags.'); // eslint-disable-line no-console
+        throw new Error();
+    }
+
+    const domParser = new Parser();
+    const xmlString = typeof chunkDataView === 'string' ? chunkDataView : getStringFromDataView(chunkDataView, 0, chunkDataView.byteLength);
+    const doc = domParser.parseFromString(trimXmlSource(xmlString), 'application/xml');
+
+    if (doc.documentElement.nodeName === 'parsererror') {
+        throw new Error(doc.documentElement.textContent);
+    }
+
+    return {
+        doc,
+        raw: xmlString,
+    };
+}
+
+function trimXmlSource(xmlSource) {
+    return xmlSource.replace(/^.+(<\?xpacket begin)/, '$1').replace(/(<\?xpacket end=".*"\?>).+$/, '$1');
+}
+
+function getRDF(node) {
+    for (let i = 0; i < node.childNodes.length; i++) {
+        if (node.childNodes[i].tagName === 'x:xmpmeta') {
+            return getRDF(node.childNodes[i]);
+        }
+        if (node.childNodes[i].tagName === 'rdf:RDF') {
+            return node.childNodes[i];
+        }
+    }
+
+    throw new Error();
+}
+
+function convertToObject(node, isTopNode = false) {
+    const childNodes = getChildNodes(node);
+
+    if (hasTextOnlyContent(childNodes)) {
+        if (isTopNode) {
+            return {};
+        }
+        return getTextValue(childNodes[0]);
+    }
+
+    return getElementsFromNodes(childNodes);
+}
+
+function getChildNodes(node) {
+    const elements = [];
+
+    for (let i = 0; i < node.childNodes.length; i++) {
+        elements.push(node.childNodes[i]);
+    }
+
+    return elements;
+}
+
+function hasTextOnlyContent(nodes) {
+    return (nodes.length === 1) && (nodes[0].nodeName === '#text');
+}
+
+function getTextValue(node) {
+    return node.nodeValue;
+}
+
+function getElementsFromNodes(nodes) {
+    const elements = {};
+
+    nodes.forEach((node) => {
+        if (isElement(node)) {
+            const nodeElement = getElementFromNode(node);
+
+            if (elements[node.nodeName] !== undefined) {
+                if (!Array.isArray(elements[node.nodeName])) {
+                    elements[node.nodeName] = [elements[node.nodeName]];
+                }
+                elements[node.nodeName].push(nodeElement);
+            } else {
+                elements[node.nodeName] = nodeElement;
+            }
+        }
+    });
+
+    return elements;
+}
+
+function isElement(node) {
+    return (node.nodeName) && (node.nodeName !== '#text');
+}
+
+function getElementFromNode(node) {
+    return {
+        attributes: getAttributes(node),
+        value: convertToObject(node)
+    };
+}
+
+function getAttributes(element) {
+    const attributes = {};
+
+    for (let i = 0; i < element.attributes.length; i++) {
+        attributes[element.attributes[i].nodeName] = decodeURIComponent(escape(element.attributes[i].value));
+    }
+
+    return attributes;
+}
+
+function parseXMPObject(xmpObject) {
+    const tags = {};
+
+    if (typeof xmpObject === 'string') {
+        return xmpObject;
+    }
+
+    for (const nodeName in xmpObject) {
+        let nodes = xmpObject[nodeName];
+
+        if (!Array.isArray(nodes)) {
+            nodes = [nodes];
+        }
+
+        nodes.forEach((node) => {
+            objectAssign(tags, parseNodeAttributesAsTags(node.attributes));
+            if (typeof node.value === 'object') {
+                objectAssign(tags, parseNodeChildrenAsTags(node.value));
+            }
+        });
+    }
+
+    return tags;
+}
+
+function parseNodeAttributesAsTags(attributes) {
+    const tags = {};
+
+    for (const name in attributes) {
+        if (isTagAttribute(name)) {
+            tags[getLocalName(name)] = {
+                value: attributes[name],
+                attributes: {},
+                description: getDescription(attributes[name], name)
+            };
+        }
+    }
+
+    return tags;
+}
+
+function isTagAttribute(name) {
+    return (name !== 'rdf:parseType') && (!isNamespaceDefinition(name));
+}
+
+function isNamespaceDefinition(name) {
+    return name.split(':')[0] === 'xmlns';
+}
+
+function getLocalName(name) {
+    if (/^MicrosoftPhoto(_\d+_)?:Rating$/i.test(name)) {
+        return 'RatingPercent';
+    }
+    return name.split(':')[1];
+}
+
+function getDescription(value, name = undefined) {
+    if (Array.isArray(value)) {
+        return getDescriptionOfArray(value);
+    }
+    if (typeof value === 'object') {
+        return getDescriptionOfObject(value);
+    }
+
+    try {
+        if ((name) && (typeof xmp_tag_names[name] === 'function')) {
+            return xmp_tag_names[name](value);
+        }
+        return decodeURIComponent(escape(value));
+    } catch (error) {
+        return value;
+    }
+}
+
+function getDescriptionOfArray(value) {
+    return value.map((item) => {
+        if (item.value !== undefined) {
+            return getDescription(item.value);
+        }
+        return getDescription(item);
+    }).join(', ');
+}
+
+function getDescriptionOfObject(value) {
+    const descriptions = [];
+
+    for (const key in value) {
+        descriptions.push(`${getClearTextKey(key)}: ${getDescription(value[key].value)}`);
+    }
+
+    return descriptions.join('; ');
+}
+
+function getClearTextKey(key) {
+    if (key === 'CiAdrCity') {
+        return 'CreatorCity';
+    }
+    if (key === 'CiAdrCtry') {
+        return 'CreatorCountry';
+    }
+    if (key === 'CiAdrExtadr') {
+        return 'CreatorAddress';
+    }
+    if (key === 'CiAdrPcode') {
+        return 'CreatorPostalCode';
+    }
+    if (key === 'CiAdrRegion') {
+        return 'CreatorRegion';
+    }
+    if (key === 'CiEmailWork') {
+        return 'CreatorWorkEmail';
+    }
+    if (key === 'CiTelWork') {
+        return 'CreatorWorkPhone';
+    }
+    if (key === 'CiUrlWork') {
+        return 'CreatorWorkUrl';
+    }
+    return key;
+}
+
+function parseNodeChildrenAsTags(children) {
+    const tags = {};
+
+    for (const name in children) {
+        if (!isNamespaceDefinition(name)) {
+            tags[getLocalName(name)] = parseNodeAsTag(children[name], name);
+        }
+    }
+
+    return tags;
+}
+
+function parseNodeAsTag(node, name) {
+    if (hasNestedSimpleRdfDescription(node)) {
+        return parseNodeAsSimpleRdfDescription(node, name);
+    }
+    if (hasNestedStructureRdfDescription(node)) {
+        return parseNodeAsStructureRdfDescription(node, name);
+    }
+    if (isCompactStructure(node)) {
+        return parseNodeAsCompactStructure(node, name);
+    }
+    if (isArray(node)) {
+        return parseNodeAsArray(node, name);
+    }
+    return parseNodeAsSimpleValue(node, name);
+}
+
+function hasNestedSimpleRdfDescription(node) {
+    return ((node.attributes['rdf:parseType'] === 'Resource') && (node.value['rdf:value'] !== undefined))
+        || ((node.value['rdf:Description'] !== undefined) && (node.value['rdf:Description'].value['rdf:value'] !== undefined));
+}
+
+function parseNodeAsSimpleRdfDescription(node, name) {
+    const attributes = parseNodeAttributes(node);
+
+    if (node.value['rdf:Description'] !== undefined) {
+        node = node.value['rdf:Description'];
+    }
+
+    objectAssign(attributes, parseNodeAttributes(node), parseNodeChildrenAsAttributes(node));
+
+    const value = parseRdfValue(node);
+
+    return {
+        value,
+        attributes,
+        description: getDescription(value, name)
+    };
+}
+
+function parseNodeAttributes(node) {
+    const attributes = {};
+
+    for (const name in node.attributes) {
+        if ((name !== 'rdf:parseType') && (name !== 'rdf:resource') && (!isNamespaceDefinition(name))) {
+            attributes[getLocalName(name)] = node.attributes[name];
+        }
+    }
+
+    return attributes;
+}
+
+function parseNodeChildrenAsAttributes(node) {
+    const attributes = {};
+
+    for (const name in node.value) {
+        if ((name !== 'rdf:value') && (!isNamespaceDefinition(name))) {
+            attributes[getLocalName(name)] = node.value[name].value;
+        }
+    }
+
+    return attributes;
+}
+
+function parseRdfValue(node) {
+    return getURIValue(node.value['rdf:value']) || node.value['rdf:value'].value;
+}
+
+function hasNestedStructureRdfDescription(node) {
+    return (node.attributes['rdf:parseType'] === 'Resource')
+        || ((node.value['rdf:Description'] !== undefined) && (node.value['rdf:Description'].value['rdf:value'] === undefined));
+}
+
+function parseNodeAsStructureRdfDescription(node, name) {
+    const tag = {
+        value: {},
+        attributes: {}
+    };
+
+    if (node.value['rdf:Description'] !== undefined) {
+        objectAssign(tag.value, parseNodeAttributesAsTags(node.value['rdf:Description'].attributes));
+        objectAssign(tag.attributes, parseNodeAttributes(node));
+        node = node.value['rdf:Description'];
+    }
+
+    objectAssign(tag.value, parseNodeChildrenAsTags(node.value));
+
+    tag.description = getDescription(tag.value, name);
+
+    return tag;
+}
+
+function isCompactStructure(node) {
+    return (Object.keys(node.value).length === 0)
+        && (node.attributes['xml:lang'] === undefined)
+        && (node.attributes['rdf:resource'] === undefined);
+}
+
+function parseNodeAsCompactStructure(node, name) {
+    const value = parseNodeAttributesAsTags(node.attributes);
+
+    return {
+        value,
+        attributes: {},
+        description: getDescription(value, name)
+    };
+}
+
+function isArray(node) {
+    return getArrayChild(node.value) !== undefined;
+}
+
+function getArrayChild(value) {
+    return value['rdf:Bag'] || value['rdf:Seq'] || value['rdf:Alt'];
+}
+
+function parseNodeAsArray(node, name) {
+    let items = getArrayChild(node.value).value['rdf:li'];
+    const attributes = parseNodeAttributes(node);
+    const value = [];
+
+    if (items === undefined) {
+        items = [];
+    } else if (!Array.isArray(items)) {
+        items = [items];
+    }
+
+    items.forEach((item) => {
+        value.push(parseArrayValue(item));
+    });
+
+    return {
+        value,
+        attributes,
+        description: getDescription(value, name)
+    };
+}
+
+function parseArrayValue(item) {
+    if (hasNestedSimpleRdfDescription(item)) {
+        return parseNodeAsSimpleRdfDescription(item);
+    }
+    if (hasNestedStructureRdfDescription(item)) {
+        return parseNodeAsStructureRdfDescription(item).value;
+    }
+    if (isCompactStructure(item)) {
+        return parseNodeAsCompactStructure(item).value;
+    }
+
+    return parseNodeAsSimpleValue(item);
+}
+
+function parseNodeAsSimpleValue(node, name) {
+    const value = getURIValue(node) || parseXMPObject(node.value);
+
+    return {
+        value,
+        attributes: parseNodeAttributes(node),
+        description: getDescription(value, name)
+    };
+}
+
+function getURIValue(node) {
+    return node.attributes && node.attributes['rdf:resource'];
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/icc-tag-names.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+const iccTags = {
+    'desc': {
+        'name': 'ICC Description',
+    },
+    'cprt': {
+        'name': 'ICC Copyright',
+    },
+    'dmdd': {
+        'name': 'ICC Device Model Description',
+    },
+    'vued': {
+        'name': 'ICC Viewing Conditions Description',
+    },
+    'dmnd': {
+        'name': 'ICC Device Manufacturer for Display',
+    },
+    'tech': {
+        'name': 'Technology',
+    },
+};
+
+const iccProfile = {
+    4: {
+        'name': 'Preferred CMM type',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4),
+        'description': (value) => value !== null ? toCompany(value) : '',
+    },
+    8: {
+        'name': 'Profile Version',
+        'value': (dataView, offset) => {
+            return (dataView.getUint8(offset)).toString(10) + '.'
+            + (dataView.getUint8(offset + 1) >> 4).toString(10) + '.'
+            + (dataView.getUint8(offset + 1) % 16).toString(10);
+        }
+    },
+    12: {
+        'name': 'Profile/Device class',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4),
+        'description': (value) => {
+            switch (value.toLowerCase()) {
+                case 'scnr': return 'Input Device profile';
+                case 'mntr': return 'Display Device profile';
+                case 'prtr': return 'Output Device profile';
+                case 'link': return 'DeviceLink profile';
+                case 'abst': return 'Abstract profile';
+                case 'spac': return 'ColorSpace profile';
+                case 'nmcl': return 'NamedColor profile';
+                case 'cenc': return 'ColorEncodingSpace profile';
+                case 'mid ': return 'MultiplexIdentification profile';
+                case 'mlnk': return 'MultiplexLink profile';
+                case 'mvis': return 'MultiplexVisualization profile';
+                default: return value;
+            }
+        }
+    },
+    16: {
+        'name': 'Color Space',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4)
+    },
+    20: {
+        'name': 'Connection Space',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4)
+    },
+    24: {
+        'name': 'ICC Profile Date',
+        'value': (dataView, offset) => parseDate(dataView, offset).toISOString()
+    },
+    36: {
+        'name': 'ICC Signature',
+        'value': (dataView, offset) => sliceToString(dataView.buffer.slice(offset, offset + 4))
+    },
+    40: {
+        'name': 'Primary Platform',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4),
+        'description': (value) => toCompany(value)
+    },
+    48: {
+        'name': 'Device Manufacturer',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4),
+        'description': (value) => toCompany(value)
+    },
+    52: {
+        'name': 'Device Model Number',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4)
+    },
+    64: {
+        'name': 'Rendering Intent',
+        'value': (dataView, offset) => dataView.getUint32(offset),
+        'description': (value) => {
+            switch (value) {
+                case 0: return 'Perceptual';
+                case 1: return 'Relative Colorimetric';
+                case 2: return 'Saturation';
+                case 3: return 'Absolute Colorimetric';
+                default: return value;
+            }
+        }
+    },
+
+    80: {
+        'name': 'Profile Creator',
+        'value': (dataView, offset) => getStringFromDataView(dataView, offset, 4)
+    },
+};
+
+function parseDate(dataView, offset) {
+    const year = dataView.getUint16(offset);
+    const month = dataView.getUint16(offset + 2) - 1;
+    const day = dataView.getUint16(offset + 4);
+    const hours = dataView.getUint16(offset + 6);
+    const minutes = dataView.getUint16(offset + 8);
+    const seconds = dataView.getUint16(offset + 10);
+    return new Date(Date.UTC(year, month, day, hours, minutes, seconds));
+}
+
+function sliceToString(slice) {
+    return String.fromCharCode.apply(null, new Uint8Array(slice));
+}
+
+function toCompany(value) {
+    switch (value.toLowerCase()) {
+        case 'appl': return 'Apple';
+        case 'adbe': return 'Adobe';
+        case 'msft': return 'Microsoft';
+        case 'sunw': return 'Sun Microsystems';
+        case 'sgi': return 'Silicon Graphics';
+        case 'tgnt': return 'Taligent';
+        default: return value;
+    }
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/icc-tags.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const icc_tags = ({
+    read: icc_tags_read
+});
+
+const PROFILE_HEADER_LENGTH = 84;
+const ICC_TAG_COUNT_OFFSET = 128;
+const ICC_SIGNATURE = 'acsp';
+const TAG_TYPE_DESC = 'desc';
+const TAG_TYPE_MULTI_LOCALIZED_UNICODE_TYPE = 'mluc';
+const TAG_TYPE_TEXT = 'text';
+const TAG_TYPE_SIGNATURE = 'sig ';
+const TAG_TABLE_SINGLE_TAG_DATA = 12;
+
+// ICC profile data can be longer than application segment max length of ~64k.
+// so it can be split into multiple APP2 segments. Each segment includes
+// total chunk count and chunk number.
+// Here we read all chunks into single continious array of bytes.
+function icc_tags_read(dataView, iccData) {
+    try {
+        const totalIccProfileLength = iccData.reduce((sum, icc) => sum + icc.length, 0);
+
+        const iccBinaryData = new Uint8Array(totalIccProfileLength);
+        let offset = 0;
+        const buffer = getBuffer(dataView);
+
+        for (let chunkNumber = 1; chunkNumber <= iccData.length; chunkNumber++) {
+            const iccDataChunk = iccData.find((x) => x.chunkNumber === chunkNumber);
+            if (!iccDataChunk) {
+                throw new Error(`ICC chunk ${chunkNumber} not found`);
+            }
+
+            const data = buffer.slice(iccDataChunk.offset, iccDataChunk.offset + iccDataChunk.length);
+            const chunkData = new Uint8Array(data);
+
+            iccBinaryData.set(chunkData, offset);
+            offset += chunkData.length;
+        }
+
+        return icc_tags_parseTags(new DataView(iccBinaryData.buffer));
+    } catch (error) {
+        return {};
+    }
+}
+
+function getBuffer(dataView) {
+    if (Array.isArray(dataView)) {
+        return (new DataView(Uint8Array.from(dataView).buffer)).buffer;
+    }
+    return dataView.buffer;
+}
+
+function iccDoesNotHaveTagCount(buffer) {
+    return buffer.length < (ICC_TAG_COUNT_OFFSET + 4);
+}
+
+function hasTagsData(buffer, tagHeaderOffset) {
+    return buffer.length < tagHeaderOffset + TAG_TABLE_SINGLE_TAG_DATA;
+}
+
+function icc_tags_parseTags(dataView) {
+    const buffer = dataView.buffer;
+
+    const length = dataView.getUint32();
+    if (dataView.byteLength !== length) {
+        throw new Error('ICC profile length not matching');
+    }
+
+    if (dataView.length < PROFILE_HEADER_LENGTH) {
+        throw new Error('ICC profile too short');
+    }
+
+    const tags = {};
+
+    const iccProfileKeys = Object.keys(iccProfile);
+    for (let i = 0; i < iccProfileKeys.length; i++) {
+        const offset = iccProfileKeys[i];
+        const profileEntry = iccProfile[offset];
+        const value = profileEntry.value(dataView, parseInt(offset, 10));
+        let description = value;
+        if (profileEntry.description) {
+            description = profileEntry.description(value);
+        }
+
+        tags[profileEntry.name] = {
+            value,
+            description
+        };
+    }
+
+    const signature = icc_tags_sliceToString(buffer.slice(36, 40));
+    if (signature !== ICC_SIGNATURE) {
+        throw new Error('ICC profile: missing signature');
+    }
+
+    /* ICC data is incomplete but we have header parsed so lets return it */
+    if (iccDoesNotHaveTagCount(buffer)) {
+        return tags;
+    }
+
+    const tagCount = dataView.getUint32(128);
+    let tagHeaderOffset = 132;
+
+    for (let i = 0; i < tagCount; i++) {
+        if (hasTagsData(buffer, tagHeaderOffset)) {
+            // Tags are corrupted (offset too far), return what we parsed until now
+            return tags;
+        }
+        const tagSignature = getStringFromDataView(dataView, tagHeaderOffset, 4);
+        const tagOffset = dataView.getUint32(tagHeaderOffset + 4);
+        const tagSize = dataView.getUint32(tagHeaderOffset + 8);
+
+        if (tagOffset > buffer.length) {
+            // Tag data is invalid, lets return what we managed to parse
+            return tags;
+        }
+        const tagType = getStringFromDataView(dataView, tagOffset, 4);
+
+        if (tagType === TAG_TYPE_DESC) {
+            const tagValueSize = dataView.getUint32(tagOffset + 8);
+            if (tagValueSize > tagSize) {
+                // Tag data is invalid, lets return what we managed to parse
+                return tags;
+            }
+
+            const val = icc_tags_sliceToString(buffer.slice(tagOffset + 12, tagOffset + tagValueSize + 11));
+            addTag(tags, tagSignature, val);
+        } else if (tagType === TAG_TYPE_MULTI_LOCALIZED_UNICODE_TYPE) {
+            const numRecords = dataView.getUint32(tagOffset + 8);
+            const recordSize = dataView.getUint32(tagOffset + 12);
+            let offset = tagOffset + 16;
+            const val = [];
+            for (let recordNum = 0; recordNum < numRecords; recordNum++) {
+                const languageCode = getStringFromDataView(dataView, offset + 0, 2);
+                const countryCode = getStringFromDataView(dataView, offset + 2, 2);
+                const textLength = dataView.getUint32(offset + 4);
+                const textOffset = dataView.getUint32(offset + 8);
+
+                const text = getUnicodeStringFromDataView(dataView, tagOffset + textOffset, textLength);
+                val.push({languageCode, countryCode, text});
+                offset += recordSize;
+            }
+            if (numRecords === 1) {
+                addTag(tags, tagSignature, val[0].text);
+            } else {
+                const valObj = {};
+                for (let valIndex = 0; valIndex < val.length; valIndex++) {
+                    valObj[`${val[valIndex].languageCode}-${val[valIndex].countryCode}`] = val[valIndex].text;
+                }
+                addTag(tags, tagSignature, valObj);
+            }
+        } else if (tagType === TAG_TYPE_TEXT) {
+            const val = icc_tags_sliceToString(buffer.slice(tagOffset + 8, tagOffset + tagSize - 7));
+            addTag(tags, tagSignature, val);
+        } else if (tagType === TAG_TYPE_SIGNATURE) {
+            const val = icc_tags_sliceToString(buffer.slice(tagOffset + 8, tagOffset + 12));
+            addTag(tags, tagSignature, val);
+        }
+        tagHeaderOffset = tagHeaderOffset + 12;
+    }
+
+    return tags;
+}
+
+function icc_tags_sliceToString(slice) {
+    return String.fromCharCode.apply(null, new Uint8Array(slice));
+}
+
+function addTag(tags, tagSignature, value) {
+    if (iccTags[tagSignature]) {
+        tags[iccTags[tagSignature].name] = {value, description: value};
+    } else {
+        tags[tagSignature] = {value, description: value};
+    }
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/png-file-tags.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+/* harmony default export */ const png_file_tags = ({
+    read: png_file_tags_read
+});
+
+function png_file_tags_read(dataView, fileDataOffset) {
+    return {
+        'Image Width': png_file_tags_getImageWidth(dataView, fileDataOffset),
+        'Image Height': png_file_tags_getImageHeight(dataView, fileDataOffset),
+        'Bit Depth': getBitDepth(dataView, fileDataOffset),
+        'Color Type': getColorType(dataView, fileDataOffset),
+        'Compression': getCompression(dataView, fileDataOffset),
+        'Filter': getFilter(dataView, fileDataOffset),
+        'Interlace': getInterlace(dataView, fileDataOffset)
+    };
+}
+
+function png_file_tags_getImageWidth(dataView, fileDataOffset) {
+    const OFFSET = 0;
+    const SIZE = 4;
+
+    if (fileDataOffset + OFFSET + SIZE > dataView.byteLength) {
+        return undefined;
+    }
+
+    const value = types.getLongAt(dataView, fileDataOffset);
+    return {
+        value,
+        description: `${value}px`
+    };
+}
+
+function png_file_tags_getImageHeight(dataView, fileDataOffset) {
+    const OFFSET = 4;
+    const SIZE = 4;
+
+    if (fileDataOffset + OFFSET + SIZE > dataView.byteLength) {
+        return undefined;
+    }
+
+    const value = types.getLongAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: `${value}px`
+    };
+}
+
+function getBitDepth(dataView, fileDataOffset) {
+    const OFFSET = 8;
+    const SIZE = 1;
+
+    if (fileDataOffset + OFFSET + SIZE > dataView.byteLength) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: `${value}`
+    };
+}
+
+function getColorType(dataView, fileDataOffset) {
+    const OFFSET = 9;
+    const SIZE = 1;
+    const COLOR_TYPES = {
+        0: 'Grayscale',
+        2: 'RGB',
+        3: 'Palette',
+        4: 'Grayscale with Alpha',
+        6: 'RGB with Alpha'
+    };
+
+    if (fileDataOffset + OFFSET + SIZE > dataView.byteLength) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: COLOR_TYPES[value] || 'Unknown'
+    };
+}
+
+function getCompression(dataView, fileDataOffset) {
+    const OFFSET = 10;
+    const SIZE = 1;
+
+    if (fileDataOffset + OFFSET + SIZE > dataView.byteLength) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: value === 0 ? 'Deflate/Inflate' : 'Unknown'
+    };
+}
+
+function getFilter(dataView, fileDataOffset) {
+    const OFFSET = 11;
+    const SIZE = 1;
+
+    if (fileDataOffset + OFFSET + SIZE > dataView.byteLength) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: value === 0 ? 'Adaptive' : 'Unknown'
+    };
+}
+
+function getInterlace(dataView, fileDataOffset) {
+    const OFFSET = 12;
+    const SIZE = 1;
+    const INTERLACE_TYPES = {
+        0: 'Noninterlaced',
+        1: 'Adam7 Interlace'
+    };
+
+    if (fileDataOffset + OFFSET + SIZE > dataView.byteLength) {
+        return undefined;
+    }
+
+    const value = types.getByteAt(dataView, fileDataOffset + OFFSET);
+    return {
+        value,
+        description: INTERLACE_TYPES[value] || 'Unknown'
+    };
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/thumbnail.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+// https://exiftool.org/TagNames/EXIF.html#Compression
+const COMPRESSION_JPEG = [6, 7, 99];
+
+/* harmony default export */ const src_thumbnail = ({
+    get: thumbnail_get,
+});
+
+function thumbnail_get(dataView, thumbnailTags, tiffHeaderOffset) {
+    if (hasJpegThumbnail(thumbnailTags)) {
+        thumbnailTags.type = 'image/jpeg';
+        const offset = tiffHeaderOffset + thumbnailTags.JPEGInterchangeFormat.value;
+        thumbnailTags.image = dataView.buffer.slice(offset, offset + thumbnailTags.JPEGInterchangeFormatLength.value);
+        deferInit(thumbnailTags, 'base64', function () {
+            return getBase64Image(this.image);
+        });
+    }
+
+    // There is a small possibility of thumbnails in TIFF format but they are
+    // not stored as a self-contained image file and would be much more
+    // difficult to extract.
+    // https://exiftool.org/forum/index.php?topic=3273.msg14778#msg14778
+
+    return thumbnailTags;
+}
+
+function hasJpegThumbnail(tags) {
+    return tags && ((tags.Compression === undefined) || (COMPRESSION_JPEG.includes(tags.Compression.value)))
+        && tags.JPEGInterchangeFormat && tags.JPEGInterchangeFormat.value
+        && tags.JPEGInterchangeFormatLength && tags.JPEGInterchangeFormatLength.value;
+}
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/errors.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/**
+ * Thrown when no Exif metadata was found for the given image.
+ *
+ * @param {string} message The error message.
+ */
+function MetadataMissingError(message) {
+    this.name = 'MetadataMissingError';
+    this.message = message || 'No Exif data';
+    this.stack = (new Error()).stack;
+}
+
+MetadataMissingError.prototype = new Error;
+
+/* harmony default export */ const errors = ({
+    MetadataMissingError,
+});
+
+;// CONCATENATED MODULE: ./node_modules/exifreader/src/exif-reader.js
+/**
+ * ExifReader
+ * http://github.com/mattiasw/exifreader
+ * Copyright (C) 2011-2021  Mattias Wallander <mattias@wallander.eu>
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+/* global Buffer, __non_webpack_require__ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* harmony default export */ const exif_reader = ({
+    load,
+    loadView,
+    errors: errors,
+});
+
+const exif_reader_errors = (/* unused pure expression or super */ null && (exifErrors));
+
+function load(data, options) {
+    if (isFilePathOrURL(data)) {
+        return loadFile(data).then((fileContents) => loadFromData(fileContents, options));
+    }
+    if (isBrowserFileObject(data)) {
+        return loadFileObject(data).then((fileContents) => loadFromData(fileContents, options));
+    }
+    return loadFromData(data, options);
+}
+
+function isFilePathOrURL(data) {
+    return typeof data === 'string';
+}
+
+function loadFile(filename) {
+    if (typeof fetch !== 'undefined') {
+        return browserFetchRemoteFile(filename);
+    }
+
+    if (/^https?:\/\//.test(filename)) {
+        return nodeFetchRemoteFile(filename);
+    }
+
+    return loadLocalFile(filename);
+}
+
+function browserFetchRemoteFile(url) {
+    return fetch(url).then((response) => response.arrayBuffer());
+}
+
+function nodeFetchRemoteFile(url) {
+    return new Promise((resolve, reject) => {
+        const get = requireNodeGet(url);
+        get(url, (response) => {
+            if ((response.statusCode >= 200) && (response.statusCode <= 299)) {
+                const data = [];
+                response.on('data', (chunk) => data.push(Buffer.from(chunk)));
+                response.on('error', (error) => reject(error));
+                response.on('end', () => resolve(Buffer.concat(data)));
+            } else {
+                reject(`Could not fetch file: ${response.statusCode} ${response.statusMessage}`);
+                response.resume();
+            }
+        }).on('error', (error) => reject(error));
+    });
+}
+
+function requireNodeGet(url) {
+    if (/^https:\/\//.test(url)) {
+        return require('https').get;
+    }
+    return require('http').get;
+}
+
+function loadLocalFile(filename) {
+    return new Promise((resolve, reject) => {
+        const fs = requireNodeFs();
+        fs.open(filename, (error, fd) => {
+            if (error) {
+                reject(error);
+            } else {
+                fs.stat(filename, (error, stat) => {
+                    if (error) {
+                        reject(error);
+                    } else {
+                        const buffer = Buffer.alloc(stat.size);
+                        fs.read(fd, {buffer}, (error) => {
+                            if (error) {
+                                reject(error);
+                            } else {
+                                fs.close(fd, (error) => {
+                                    if (error) {
+                                        console.warn(`Could not close file ${filename}:`, error); // eslint-disable-line no-console
+                                    }
+                                    resolve(buffer);
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    });
+}
+
+function requireNodeFs() {
+    try {
+        return require('fs');
+    } catch (error) {
+        return undefined;
+    }
+}
+
+function isBrowserFileObject(data) {
+    return (typeof window !== 'undefined') && (typeof File !== 'undefined') && (data instanceof File);
+}
+
+function loadFileObject(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => resolve(readerEvent.target.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function loadFromData(data, options) {
+    if (isNodeBuffer(data)) {
+        // File data read in Node can share the underlying buffer with other
+        // data. Therefore it's safest to get a new one to avoid weird bugs.
+        data = (new Uint8Array(data)).buffer;
+    }
+    return loadView(getDataView(data), options);
+}
+
+function isNodeBuffer(data) {
+    try {
+        return Buffer.isBuffer(data);
+    } catch (error) {
+        return false;
+    }
+}
+
+function getDataView(data) {
+    try {
+        return new DataView(data);
+    } catch (error) {
+        return new dataview_DataView(data);
+    }
+}
+
+function loadView(dataView, {expanded = false, includeUnknown = false} = {expanded: false, includeUnknown: false}) {
+    let foundMetaData = false;
+    let tags = {};
+
+    const {
+        fileDataOffset,
+        jfifDataOffset,
+        tiffHeaderOffset,
+        iptcDataOffset,
+        xmpChunks,
+        iccChunks,
+        mpfDataOffset,
+        pngHeaderOffset
+    } = image_header.parseAppMarkers(dataView);
+
+    if (constants.USE_JPEG && constants.USE_FILE && hasFileData(fileDataOffset)) {
+        foundMetaData = true;
+        const readTags = file_tags.read(dataView, fileDataOffset);
+        if (expanded) {
+            tags.file = readTags;
+        } else {
+            tags = objectAssign({}, tags, readTags);
+        }
+    }
+
+    if (constants.USE_JPEG && constants.USE_JFIF && hasJfifData(jfifDataOffset)) {
+        foundMetaData = true;
+        const readTags = jfif_tags.read(dataView, jfifDataOffset);
+        if (expanded) {
+            tags.jfif = readTags;
+        } else {
+            tags = objectAssign({}, tags, readTags);
+        }
+    }
+
+    if (constants.USE_EXIF && hasExifData(tiffHeaderOffset)) {
+        foundMetaData = true;
+        const readTags = src_tags.read(dataView, tiffHeaderOffset, includeUnknown);
+        if (readTags.Thumbnail) {
+            tags.Thumbnail = readTags.Thumbnail;
+            delete readTags.Thumbnail;
+        }
+
+        if (expanded) {
+            tags.exif = readTags;
+            addGpsGroup(tags);
+        } else {
+            tags = objectAssign({}, tags, readTags);
+        }
+
+        if (constants.USE_TIFF && constants.USE_IPTC && readTags['IPTC-NAA'] && !hasIptcData(iptcDataOffset)) {
+            const readIptcTags = iptc_tags.read(readTags['IPTC-NAA'].value, 0, includeUnknown);
+            if (expanded) {
+                tags.iptc = readIptcTags;
+            } else {
+                tags = objectAssign({}, tags, readIptcTags);
+            }
+        }
+
+        if (constants.USE_TIFF && constants.USE_XMP && readTags['ApplicationNotes'] && !hasXmpData(xmpChunks)) {
+            const readXmpTags = xmp_tags.read(getStringValueFromArray(readTags['ApplicationNotes'].value));
+            if (expanded) {
+                tags.xmp = readXmpTags;
+            } else {
+                delete readXmpTags._raw;
+                tags = objectAssign({}, tags, readXmpTags);
+            }
+        }
+
+        if (constants.USE_TIFF && constants.USE_ICC && readTags['ICC_Profile'] && !hasIccData(iccChunks)) {
+            const readIccTags = icc_tags.read(
+                readTags['ICC_Profile'].value,
+                [{
+                    offset: 0,
+                    length: readTags['ICC_Profile'].value.length,
+                    chunkNumber: 1,
+                    chunksTotal: 1
+                }]
+            );
+            if (expanded) {
+                tags.icc = readIccTags;
+            } else {
+                tags = objectAssign({}, tags, readIccTags);
+            }
+        }
+    }
+
+    if (constants.USE_JPEG && constants.USE_IPTC && hasIptcData(iptcDataOffset)) {
+        foundMetaData = true;
+        const readTags = iptc_tags.read(dataView, iptcDataOffset, includeUnknown);
+        if (expanded) {
+            tags.iptc = readTags;
+        } else {
+            tags = objectAssign({}, tags, readTags);
+        }
+    }
+
+    if (constants.USE_XMP && hasXmpData(xmpChunks)) {
+        foundMetaData = true;
+        const readTags = xmp_tags.read(dataView, xmpChunks);
+        if (expanded) {
+            tags.xmp = readTags;
+        } else {
+            delete readTags._raw;
+            tags = objectAssign({}, tags, readTags);
+        }
+    }
+
+    if ((constants.USE_JPEG || constants.USE_WEBP) && constants.USE_ICC && hasIccData(iccChunks)) {
+        foundMetaData = true;
+        const readTags = icc_tags.read(dataView, iccChunks);
+        if (expanded) {
+            tags.icc = readTags;
+        } else {
+            tags = objectAssign({}, tags, readTags);
+        }
+    }
+
+    if (constants.USE_MPF && hasMpfData(mpfDataOffset)) {
+        foundMetaData = true;
+        const readMpfTags = src_tags.readMpf(dataView, mpfDataOffset, includeUnknown);
+        if (expanded) {
+            tags.mpf = readMpfTags;
+        } else {
+            tags = objectAssign({}, tags, readMpfTags);
+        }
+    }
+
+    if (constants.USE_PNG && constants.USE_PNG_FILE && hasPngFileData(pngHeaderOffset)) {
+        foundMetaData = true;
+        const readTags = png_file_tags.read(dataView, pngHeaderOffset);
+        if (expanded) {
+            tags.pngFile = readTags;
+        } else {
+            tags = objectAssign({}, tags, readTags);
+        }
+    }
+
+    const thumbnail = (constants.USE_JPEG || constants.USE_WEBP)
+        && constants.USE_EXIF
+        && constants.USE_THUMBNAIL
+        && src_thumbnail.get(dataView, tags.Thumbnail, tiffHeaderOffset);
+    if (thumbnail) {
+        foundMetaData = true;
+        tags.Thumbnail = thumbnail;
+    } else {
+        delete tags.Thumbnail;
+    }
+
+    if (!foundMetaData) {
+        throw new errors.MetadataMissingError();
+    }
+
+    return tags;
+}
+
+function hasFileData(fileDataOffset) {
+    return fileDataOffset !== undefined;
+}
+
+function hasJfifData(jfifDataOffset) {
+    return jfifDataOffset !== undefined;
+}
+
+function hasExifData(tiffHeaderOffset) {
+    return tiffHeaderOffset !== undefined;
+}
+
+function addGpsGroup(tags) {
+    if (tags.exif) {
+        if (tags.exif.GPSLatitude && tags.exif.GPSLatitudeRef) {
+            try {
+                tags.gps = tags.gps || {};
+                tags.gps.Latitude = getCalculatedGpsValue(tags.exif.GPSLatitude.value);
+                if (tags.exif.GPSLatitudeRef.value.join('') === 'S') {
+                    tags.gps.Latitude = -tags.gps.Latitude;
+                }
+            } catch (error) {
+                // Ignore.
+            }
+        }
+
+        if (tags.exif.GPSLongitude && tags.exif.GPSLongitudeRef) {
+            try {
+                tags.gps = tags.gps || {};
+                tags.gps.Longitude = getCalculatedGpsValue(tags.exif.GPSLongitude.value);
+                if (tags.exif.GPSLongitudeRef.value.join('') === 'W') {
+                    tags.gps.Longitude = -tags.gps.Longitude;
+                }
+            } catch (error) {
+                // Ignore.
+            }
+        }
+
+        if (tags.exif.GPSAltitude && tags.exif.GPSAltitudeRef) {
+            try {
+                tags.gps = tags.gps || {};
+                tags.gps.Altitude = tags.exif.GPSAltitude.value[0] / tags.exif.GPSAltitude.value[1];
+                if (tags.exif.GPSAltitudeRef.value === 1) {
+                    tags.gps.Altitude = -tags.gps.Altitude;
+                }
+            } catch (error) {
+                // Ignore.
+            }
+        }
+    }
+}
+
+function hasIptcData(iptcDataOffset) {
+    return iptcDataOffset !== undefined;
+}
+
+function hasXmpData(xmpChunks) {
+    return Array.isArray(xmpChunks) && xmpChunks.length > 0;
+}
+
+function hasIccData(iccDataOffsets) {
+    return Array.isArray(iccDataOffsets) && iccDataOffsets.length > 0;
+}
+
+function hasMpfData(mpfDataOffset) {
+    return mpfDataOffset !== undefined;
+}
+
+function hasPngFileData(pngFileDataOffset) {
+    return pngFileDataOffset !== undefined;
+}
+
+;// CONCATENATED MODULE: ./source/standard-extensions.ts
+var __extends = (undefined && undefined.__extends) || (function () {
+    var extendStatics = function (d, b) {
+        extendStatics = Object.setPrototypeOf ||
+            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
+        return extendStatics(d, b);
+    };
+    return function (d, b) {
+        if (typeof b !== "function" && b !== null)
+            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
+var standard_extensions_read = (undefined && undefined.__read) || function (o, n) {
     var m = typeof Symbol === "function" && o[Symbol.iterator];
     if (!m) return o;
     var i = m.call(o), r, ar = [], e;
@@ -220,6 +5308,208 @@ var __spreadArray = (undefined && undefined.__spreadArray) || function (to, from
     }
     return to.concat(ar || Array.prototype.slice.call(from));
 };
+function error(template) {
+    var substitutions = [];
+    for (var _i = 1; _i < arguments.length; _i++) {
+        substitutions[_i - 1] = arguments[_i];
+    }
+    var message = String.raw.apply(String, __spreadArray([template], standard_extensions_read(substitutions.map(function (x) {
+        return typeof x === "string" ? x : JSON.stringify(x);
+    })), false));
+    throw new Error(message);
+}
+function id(x) {
+    return x;
+}
+function ignore() {
+    var _args = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        _args[_i] = arguments[_i];
+    }
+    /* 引数を無視する関数 */
+}
+var AbortError = /** @class */ (function (_super) {
+    __extends(AbortError, _super);
+    function AbortError(message) {
+        var _this = _super.call(this, message) || this;
+        _this.name = "AbortError";
+        return _this;
+    }
+    return AbortError;
+}(Error));
+function newAbortError(message) {
+    if (message === void 0) { message = "The operation was aborted."; }
+    if (typeof DOMException === "function") {
+        return new DOMException(message, "AbortError");
+    }
+    else {
+        return new AbortError(message);
+    }
+}
+function sleep(milliseconds, option) {
+    return new Promise(function (resolve, reject) {
+        var signal = option === null || option === void 0 ? void 0 : option.signal;
+        if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+            reject(newAbortError());
+            return;
+        }
+        var onAbort = signal
+            ? function () {
+                clearTimeout(id);
+                reject(newAbortError());
+            }
+            : ignore;
+        var id = setTimeout(function () {
+            signal === null || signal === void 0 ? void 0 : signal.removeEventListener("abort", onAbort);
+            resolve();
+        }, milliseconds);
+        signal === null || signal === void 0 ? void 0 : signal.addEventListener("abort", onAbort);
+    });
+}
+function cancelToReject(promise, onCancel) {
+    if (onCancel === void 0) { onCancel = ignore; }
+    return promise.catch(function (e) {
+        if (e instanceof Error && e.name === "AbortError") {
+            return onCancel();
+        }
+        throw e;
+    });
+}
+
+;// CONCATENATED MODULE: ./source/coordinate-of-image.ts
+var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (undefined && undefined.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+// spell-checker: ignore exif
+
+
+function normalizeDMS(value, isNegative) {
+    return value * (isNegative ? -1 : 1);
+}
+function parseDMS(numbers) {
+    var description = numbers === null || numbers === void 0 ? void 0 : numbers.description;
+    if (description == null) {
+        return null;
+    }
+    return parseFloat(description);
+}
+function readFileAsArrayBuffer(file, options) {
+    return new Promise(function (resolve, reject) {
+        var _a;
+        var signal = options === null || options === void 0 ? void 0 : options.signal;
+        if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+            return reject(newAbortError());
+        }
+        var onAbort = signal
+            ? function () {
+                reader.abort();
+                reject(newAbortError());
+            }
+            : ignore;
+        signal === null || signal === void 0 ? void 0 : signal.addEventListener("abort", onAbort);
+        var progress = (_a = options === null || options === void 0 ? void 0 : options.progress) !== null && _a !== void 0 ? _a : null;
+        var reader = new FileReader();
+        reader.onloadstart = progress;
+        reader.onprogress = progress;
+        reader.onload = function (e) {
+            progress === null || progress === void 0 ? void 0 : progress(e);
+            signal === null || signal === void 0 ? void 0 : signal.removeEventListener("abort", onAbort);
+            resolve(reader.result);
+        };
+        reader.onerror = function (e) {
+            progress === null || progress === void 0 ? void 0 : progress(e);
+            signal === null || signal === void 0 ? void 0 : signal.removeEventListener("abort", onAbort);
+            reject(e);
+        };
+        reader.onabort = progress;
+        reader.readAsArrayBuffer(file);
+    });
+}
+function coordinateOfImage(file, options) {
+    var _a, _b, _c;
+    return __awaiter(this, void 0, void 0, function () {
+        var buffer, tags, lat, latRef, lng, lngRef;
+        return __generator(this, function (_d) {
+            switch (_d.label) {
+                case 0: return [4 /*yield*/, readFileAsArrayBuffer(file, options)];
+                case 1:
+                    buffer = _d.sent();
+                    tags = load(buffer);
+                    lat = parseDMS(tags.GPSLatitude);
+                    latRef = (_a = tags.GPSLatitudeRef) === null || _a === void 0 ? void 0 : _a.description;
+                    lng = parseDMS(tags.GPSLongitude);
+                    lngRef = (_c = (_b = tags.GPSLongitudeRef) === null || _b === void 0 ? void 0 : _b.value) === null || _c === void 0 ? void 0 : _c[0];
+                    if (lng == null || lngRef == null || lat == null || latRef == null) {
+                        return [2 /*return*/, null];
+                    }
+                    return [2 /*return*/, {
+                            lat: normalizeDMS(lat, latRef === "S"),
+                            lng: normalizeDMS(lng, lngRef === "W"),
+                        }];
+            }
+        });
+    });
+}
+
+;// CONCATENATED MODULE: ./source/document-extensions.ts
+var document_extensions_read = (undefined && undefined.__read) || function (o, n) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator];
+    if (!m) return o;
+    var i = m.call(o), r, ar = [], e;
+    try {
+        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
+    }
+    catch (error) { e = { error: error }; }
+    finally {
+        try {
+            if (r && !r.done && (m = i["return"])) m.call(i);
+        }
+        finally { if (e) throw e.error; }
+    }
+    return ar;
+};
+var document_extensions_spreadArray = (undefined && undefined.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
 function waitElementLoaded() {
     if (document.readyState !== "loading") {
         return Promise.resolve();
@@ -236,7 +5526,7 @@ function addStyle(cssOrTemplate) {
     }
     var css = typeof cssOrTemplate === "string"
         ? cssOrTemplate
-        : String.raw.apply(String, __spreadArray([cssOrTemplate], document_extensions_read(substitutions), false));
+        : String.raw.apply(String, document_extensions_spreadArray([cssOrTemplate], document_extensions_read(substitutions), false));
     if (styleElement == null) {
         styleElement = document.createElement("style");
         document.head.appendChild(styleElement);
@@ -246,7 +5536,7 @@ function addStyle(cssOrTemplate) {
 }
 
 ;// CONCATENATED MODULE: ./source/json-spec.ts
-var __extends = (undefined && undefined.__extends) || (function () {
+var json_spec_extends = (undefined && undefined.__extends) || (function () {
     var extendStatics = function (d, b) {
         extendStatics = Object.setPrototypeOf ||
             ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
@@ -358,7 +5648,7 @@ function showPropertyNotFoundMessage(expectedKey, path) {
     return "Expected property \"".concat(expectedKey, "\". at: ").concat(showFullObjectPath(path));
 }
 var ValidationError = /** @class */ (function (_super) {
-    __extends(ValidationError, _super);
+    json_spec_extends(ValidationError, _super);
     function ValidationError(message) {
         var _this = _super.call(this, message) || this;
         _this.name = ValidationError.name;
@@ -367,7 +5657,7 @@ var ValidationError = /** @class */ (function (_super) {
     return ValidationError;
 }(Error));
 var string = new (/** @class */ (function (_super) {
-    __extends(StringSpec, _super);
+    json_spec_extends(StringSpec, _super);
     function StringSpec() {
         var _this = _super !== null && _super.apply(this, arguments) || this;
         _this._internal_typeExpression = "string";
@@ -383,7 +5673,7 @@ var string = new (/** @class */ (function (_super) {
     return StringSpec;
 }(Spec)))();
 var number = new (/** @class */ (function (_super) {
-    __extends(NumberSpec, _super);
+    json_spec_extends(NumberSpec, _super);
     function NumberSpec() {
         var _this = _super !== null && _super.apply(this, arguments) || this;
         _this._internal_typeExpression = "number";
@@ -400,7 +5690,7 @@ var number = new (/** @class */ (function (_super) {
 }(Spec)))();
 var json_spec_hasOwnProperty = Object.prototype.hasOwnProperty;
 var RecordSpec = /** @class */ (function (_super) {
-    __extends(RecordSpec, _super);
+    json_spec_extends(RecordSpec, _super);
     function RecordSpec(specs) {
         var _this = _super.call(this) || this;
         _this._internal_typeExpressionPrecedence = 3 /* Primary */;
@@ -456,7 +5746,7 @@ function record(propertySpecs) {
     return new RecordSpec(propertySpecs);
 }
 var object = new (/** @class */ (function (_super) {
-    __extends(ObjectSpec, _super);
+    json_spec_extends(ObjectSpec, _super);
     function ObjectSpec() {
         var _this = _super !== null && _super.apply(this, arguments) || this;
         _this.imitation = Object.freeze({});
@@ -472,7 +5762,7 @@ var object = new (/** @class */ (function (_super) {
     return ObjectSpec;
 }(Spec)))();
 var emptyRecord = new (/** @class */ (function (_super) {
-    __extends(EmptyRecordSpec, _super);
+    json_spec_extends(EmptyRecordSpec, _super);
     function EmptyRecordSpec() {
         var _this = _super !== null && _super.apply(this, arguments) || this;
         _this.imitation = Object.freeze({});
@@ -491,7 +5781,7 @@ var emptyRecord = new (/** @class */ (function (_super) {
     return EmptyRecordSpec;
 }(Spec)))();
 var ArraySpec = /** @class */ (function (_super) {
-    __extends(ArraySpec, _super);
+    json_spec_extends(ArraySpec, _super);
     function ArraySpec(_elementSpec) {
         var _this = _super.call(this) || this;
         _this._elementSpec = _elementSpec;
@@ -529,7 +5819,7 @@ function array(spec) {
     return new ArraySpec(spec);
 }
 var OrSpec = /** @class */ (function (_super) {
-    __extends(OrSpec, _super);
+    json_spec_extends(OrSpec, _super);
     function OrSpec(_specs) {
         var _this = _super.call(this) || this;
         _this._specs = _specs;
@@ -580,7 +5870,7 @@ function isTuple1(tuple) {
     return 1 === tuple.length;
 }
 var never = new (/** @class */ (function (_super) {
-    __extends(NeverSpec, _super);
+    json_spec_extends(NeverSpec, _super);
     function NeverSpec() {
         var _this = _super.call(this) || this;
         _this._internal_typeExpression = "never";
@@ -600,7 +5890,7 @@ var never = new (/** @class */ (function (_super) {
     return NeverSpec;
 }(Spec)))();
 var unknown = new (/** @class */ (function (_super) {
-    __extends(UnknownSpec, _super);
+    json_spec_extends(UnknownSpec, _super);
     function UnknownSpec() {
         var _this = _super.call(this) || this;
         _this.imitation = "unknown";
@@ -627,7 +5917,7 @@ function or() {
     return never;
 }
 var AndSpec = /** @class */ (function (_super) {
-    __extends(AndSpec, _super);
+    json_spec_extends(AndSpec, _super);
     function AndSpec(_specs) {
         var _this = _super.call(this) || this;
         _this._specs = _specs;
@@ -688,7 +5978,7 @@ function and() {
     return unknown;
 }
 var LiteralSpec = /** @class */ (function (_super) {
-    __extends(LiteralSpec, _super);
+    json_spec_extends(LiteralSpec, _super);
     function LiteralSpec(imitation) {
         var _this = _super.call(this) || this;
         _this.imitation = imitation;
@@ -755,7 +6045,7 @@ var gsi_reverse_geocoder_assign = (undefined && undefined.__assign) || function 
     };
     return gsi_reverse_geocoder_assign.apply(this, arguments);
 };
-var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
+var gsi_reverse_geocoder_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -764,7 +6054,7 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __generator = (undefined && undefined.__generator) || function (thisArg, body) {
+var gsi_reverse_geocoder_generator = (undefined && undefined.__generator) || function (thisArg, body) {
     var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
     return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
     function verb(n) { return function (v) { return step([n, v]); }; }
@@ -821,10 +6111,10 @@ var gsi_reverse_geocoder_read = (undefined && undefined.__read) || function (o, 
 
 
 function readTable() {
-    return __awaiter(this, void 0, void 0, function () {
+    return gsi_reverse_geocoder_awaiter(this, void 0, void 0, function () {
         var result, table_1, table_1_1, _a, key, value;
         var e_1, _b;
-        return __generator(this, function (_c) {
+        return gsi_reverse_geocoder_generator(this, function (_c) {
             result = new Map();
             try {
                 for (table_1 = gsi_reverse_geocoder_values(source_gsi_muni_table_namespaceObject), table_1_1 = table_1.next(); !table_1_1.done; table_1_1 = table_1.next()) {
@@ -855,9 +6145,9 @@ var ResultSpec = or(record({
 var resultSpec = ResultSpec;
 function lonLatToAddress(lon, lat, option) {
     var _a;
-    return __awaiter(this, void 0, void 0, function () {
+    return gsi_reverse_geocoder_awaiter(this, void 0, void 0, function () {
         var params, response, result, results, table, detail;
-        return __generator(this, function (_b) {
+        return gsi_reverse_geocoder_generator(this, function (_b) {
             switch (_b.label) {
                 case 0:
                     params = new URLSearchParams({ lon: String(lon), lat: String(lat) });
@@ -882,115 +6172,6 @@ function lonLatToAddress(lon, lat, option) {
                     return [2 /*return*/, gsi_reverse_geocoder_assign(gsi_reverse_geocoder_assign({}, results), { detail: detail })];
             }
         });
-    });
-}
-
-;// CONCATENATED MODULE: ./source/standard-extensions.ts
-var standard_extensions_extends = (undefined && undefined.__extends) || (function () {
-    var extendStatics = function (d, b) {
-        extendStatics = Object.setPrototypeOf ||
-            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
-        return extendStatics(d, b);
-    };
-    return function (d, b) {
-        if (typeof b !== "function" && b !== null)
-            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
-        extendStatics(d, b);
-        function __() { this.constructor = d; }
-        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-    };
-})();
-var standard_extensions_read = (undefined && undefined.__read) || function (o, n) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator];
-    if (!m) return o;
-    var i = m.call(o), r, ar = [], e;
-    try {
-        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
-    }
-    catch (error) { e = { error: error }; }
-    finally {
-        try {
-            if (r && !r.done && (m = i["return"])) m.call(i);
-        }
-        finally { if (e) throw e.error; }
-    }
-    return ar;
-};
-var standard_extensions_spreadArray = (undefined && undefined.__spreadArray) || function (to, from, pack) {
-    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
-        if (ar || !(i in from)) {
-            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
-            ar[i] = from[i];
-        }
-    }
-    return to.concat(ar || Array.prototype.slice.call(from));
-};
-function error(template) {
-    var substitutions = [];
-    for (var _i = 1; _i < arguments.length; _i++) {
-        substitutions[_i - 1] = arguments[_i];
-    }
-    var message = String.raw.apply(String, standard_extensions_spreadArray([template], standard_extensions_read(substitutions.map(function (x) {
-        return typeof x === "string" ? x : JSON.stringify(x);
-    })), false));
-    throw new Error(message);
-}
-function id(x) {
-    return x;
-}
-function ignore() {
-    var _args = [];
-    for (var _i = 0; _i < arguments.length; _i++) {
-        _args[_i] = arguments[_i];
-    }
-    /* 引数を無視する関数 */
-}
-var AbortError = /** @class */ (function (_super) {
-    standard_extensions_extends(AbortError, _super);
-    function AbortError(message) {
-        var _this = _super.call(this, message) || this;
-        _this.name = "AbortError";
-        return _this;
-    }
-    return AbortError;
-}(Error));
-function newAbortError(message) {
-    if (message === void 0) { message = "The operation was aborted."; }
-    if (typeof DOMException === "function") {
-        return new DOMException(message, "AbortError");
-    }
-    else {
-        return new AbortError(message);
-    }
-}
-function sleep(milliseconds, option) {
-    return new Promise(function (resolve, reject) {
-        var signal = option === null || option === void 0 ? void 0 : option.signal;
-        if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
-            reject(newAbortError());
-            return;
-        }
-        var onAbort = signal
-            ? function () {
-                clearTimeout(id);
-                reject(newAbortError());
-            }
-            : ignore;
-        var id = setTimeout(function () {
-            signal === null || signal === void 0 ? void 0 : signal.removeEventListener("abort", onAbort);
-            resolve();
-        }, milliseconds);
-        signal === null || signal === void 0 ? void 0 : signal.addEventListener("abort", onAbort);
-    });
-}
-function cancelToReject(promise, onCancel) {
-    if (onCancel === void 0) { onCancel = ignore; }
-    return promise.catch(function (e) {
-        if (e instanceof Error && e.name === "AbortError") {
-            return onCancel();
-        }
-        throw e;
     });
 }
 
@@ -1078,6 +6259,7 @@ var iitc_plugin_quick_jump_read = (undefined && undefined.__read) || function (o
 
 
 
+
 function handleAsyncError(promise) {
     promise.catch(function (error) { return console.error(error); });
 }
@@ -1090,8 +6272,10 @@ var Names = Object.freeze({
     crossHair: "".concat(namespace, "-cross-hair"),
     toastList: "".concat(namespace, "-toast-list"),
     toastItem: "".concat(namespace, "-toast-item"),
+    dropZone: "".concat(namespace, "-drop-zone"),
+    dragOver: "".concat(namespace, "-drag-over"),
 });
-var css = "\n    .".concat(Names.terminal, " {\n        width: 100%;\n    }\n    .").concat(Names.searchBar, " {\n        background: rgba(8, 48, 78, 0.9);\n        border: 1px solid #20A8B1;\n    }\n    .").concat(Names.searchBar, " input {\n        width: 100%;\n    }\n    .").concat(Names.crossHair, " {\n        position: fixed;\n        top: 50%;\n        left: 50%;\n        transform: translate(-50%, -50%);\n        z-index: 3000;\n\n        font-size: 24px;\n        font-family: sans-serif;\n        color: #FFF;\n        text-shadow: 0 0 0.3em #000, 0 0 0.5em #000;\n        filter: drop-shadow(0 0 0.5em #000);\n    }\n    .").concat(Names.hidden, " {\n        display: none;\n    }\n    .").concat(Names.toastList, " {\n        list-style: none;\n        padding: 0;\n    }\n    .").concat(Names.toastItem, ":first-of-type {\n        border-top: 1px solid #ddd;\n    }\n    .").concat(Names.toastItem, " {\n        background-color: white;\n        display: flex;\n        align-items: center;\n        justify-content: center;\n        border-top: 1px dashed #ccc;\n        margin: 0 0.5em;\n        padding: 0.1em;\n        box-shadow: 0 2px 2px rgb(0 0 0 / 50%);\n    }\n    .").concat(Names.toastItem, " > input {\n        width: 100%;\n        color: #444;\n        background: rgba(0 0 0 / 0%);\n    }\n");
+var css = "\n    .".concat(Names.terminal, " {\n        width: 100%;\n    }\n    .").concat(Names.searchBar, " {\n        background: rgba(8, 48, 78, 0.9);\n        border: 1px solid #20A8B1;\n    }\n    .").concat(Names.searchBar, " input {\n        width: 100%;\n    }\n    .").concat(Names.crossHair, " {\n        position: fixed;\n        top: 50%;\n        left: 50%;\n        transform: translate(-50%, -50%);\n        z-index: 3000;\n\n        font-size: 24px;\n        font-family: sans-serif;\n        color: #FFF;\n        text-shadow: 0 0 0.3em #000, 0 0 0.5em #000;\n        filter: drop-shadow(0 0 0.5em #000);\n    }\n    .").concat(Names.hidden, " {\n        display: none;\n    }\n    .").concat(Names.toastList, " {\n        list-style: none;\n        padding: 0;\n    }\n    .").concat(Names.toastItem, ":first-of-type {\n        border-top: 1px solid #ddd;\n    }\n    .").concat(Names.toastItem, " {\n        background-color: white;\n        display: flex;\n        align-items: center;\n        justify-content: center;\n        border-top: 1px dashed #ccc;\n        margin: 0 0.5em;\n        padding: 0.1em;\n        box-shadow: 0 2px 2px rgb(0 0 0 / 50%);\n    }\n    .").concat(Names.toastItem, " > input {\n        width: 100%;\n        color: #444;\n        background: rgba(0 0 0 / 0%);\n    }\n    .").concat(Names.dropZone, " {\n        background: white;\n        padding: 0.5rem;\n        border-radius: 0.3rem;\n        box-shadow: 0 0 0.5rem black;\n    }\n    .").concat(Names.dragOver, " {\n        background: #ddd;\n    }\n");
 function searchCoordinate(searchText, _option) {
     var _a, _b;
     return iitc_plugin_quick_jump_awaiter(this, void 0, void 0, function () {
@@ -1131,25 +6315,34 @@ function put(_a, message, _b) {
         });
     }); })());
 }
-function searchAndMoveToCoordinate(view, _a) {
-    var signal = _a.signal;
+function waitAndExecuteCommand(view, options) {
     return iitc_plugin_quick_jump_awaiter(this, void 0, void 0, function () {
-        var inputWaitInterval, searchInput, parentMap, value, coordinate;
-        return iitc_plugin_quick_jump_generator(this, function (_b) {
-            switch (_b.label) {
+        var inputWaitInterval, searchInput, value;
+        return iitc_plugin_quick_jump_generator(this, function (_a) {
+            switch (_a.label) {
                 case 0:
-                    inputWaitInterval = view.inputWaitInterval, searchInput = view.searchInput, parentMap = view.parentMap;
+                    inputWaitInterval = view.inputWaitInterval, searchInput = view.searchInput;
                     // しばらく待ってから
-                    return [4 /*yield*/, sleep(inputWaitInterval, { signal: signal })];
+                    return [4 /*yield*/, sleep(inputWaitInterval, options)];
                 case 1:
                     // しばらく待ってから
-                    _b.sent();
+                    _a.sent();
                     value = searchInput.value;
-                    return [4 /*yield*/, searchCoordinate(value, {
-                            signal: signal,
-                        })];
-                case 2:
-                    coordinate = _b.sent();
+                    return [2 /*return*/, executeCommand(view, value, options)];
+            }
+        });
+    });
+}
+function executeCommand(view, value, options) {
+    return iitc_plugin_quick_jump_awaiter(this, void 0, void 0, function () {
+        var parentMap, coordinate;
+        return iitc_plugin_quick_jump_generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    parentMap = view.parentMap;
+                    return [4 /*yield*/, searchCoordinate(value, options)];
+                case 1:
+                    coordinate = _a.sent();
                     if (!coordinate) {
                         return [2 /*return*/, put(view, "".concat(value, " \u306E\u5EA7\u6A19\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"))];
                     }
@@ -1160,7 +6353,7 @@ function searchAndMoveToCoordinate(view, _a) {
         });
     });
 }
-function createAsyncHandler() {
+function createAsyncCancelScope() {
     var lastCancel = new AbortController();
     return function (process) {
         // 前の操作をキャンセル
@@ -1171,93 +6364,163 @@ function createAsyncHandler() {
         cancelToReject(process(lastCancel.signal)));
     };
 }
-function createTerminal(settings, parentMap) {
-    var _this = this;
-    var inputWaitInterval = settings.inputWaitInterval, locationUpdateWaitInterval = settings.locationUpdateWaitInterval;
-    var searchInput = (jsx("input", {}));
-    var outputList = jsx("ul", { class: Names.toastList });
-    var searchBar = jsx("div", iitc_plugin_quick_jump_assign({ class: Names.searchBar }, { children: searchInput }));
-    var crossHair = jsx("div", iitc_plugin_quick_jump_assign({ class: Names.crossHair }, { children: "\u253C" }));
-    var terminal = (jsxs("div", iitc_plugin_quick_jump_assign({ class: Names.terminal }, { children: [outputList, searchBar, crossHair] })));
-    terminal.classList.add(Names.hidden);
-    var view = iitc_plugin_quick_jump_assign(iitc_plugin_quick_jump_assign({}, settings), { parentMap: parentMap, inputWaitInterval: inputWaitInterval, searchInput: searchInput, crossHair: crossHair, outputList: outputList });
-    var searchBarHandler = createAsyncHandler();
-    function startSearch(inputWaitInterval) {
-        searchBarHandler(function (signal) {
-            return searchAndMoveToCoordinate(iitc_plugin_quick_jump_assign(iitc_plugin_quick_jump_assign({}, view), { inputWaitInterval: inputWaitInterval }), { signal: signal });
-        });
-    }
-    // ドキュメントで Ctrl + Q キーが押されたとき、表示しフォーカスを当てる
-    document.addEventListener("keyup", function (e) {
-        if (e.key === "q" && e.ctrlKey) {
-            terminal.classList.remove(Names.hidden);
-            searchInput.focus();
-        }
-    });
-    searchBar.addEventListener("keyup", function (e) {
-        switch (e.key) {
-            // 検索バーで Esc が押されたとき、隠す
-            case "Escape": {
-                terminal.classList.add(Names.hidden);
-                break;
-            }
-            // 検索バーで Enter が押されたとき、検索を開始する
-            case "Enter": {
-                startSearch(100);
-                break;
-            }
-        }
-    });
-    // 検索バーの入力が更新されたとき、遅延検索を開始する
-    searchInput.addEventListener("input", function () {
-        startSearch(inputWaitInterval);
-    });
-    // 主地図が移動し終わったとき、現在地を更新する
-    var locationAsyncScope = createAsyncHandler();
-    parentMap.addEventListener("moveend", function () {
-        locationAsyncScope(function (signal) { return iitc_plugin_quick_jump_awaiter(_this, void 0, void 0, function () {
-            var _a, lng, lat, address, lv01Nm, detail, _b, kenName, shiName;
-            return iitc_plugin_quick_jump_generator(this, function (_c) {
-                switch (_c.label) {
-                    case 0: 
-                    // 少し待って
-                    return [4 /*yield*/, sleep(locationUpdateWaitInterval, { signal: signal })];
-                    case 1:
-                        // 少し待って
-                        _c.sent();
-                        _a = parentMap.getCenter(), lng = _a.lng, lat = _a.lat;
-                        return [4 /*yield*/, lonLatToAddress(lng, lat, { signal: signal })];
-                    case 2:
-                        address = _c.sent();
-                        // 表示
-                        if (!address) {
-                            return [2 /*return*/, put(view, "".concat(lng, ", ").concat(lat, ": \u306E\u4F4F\u6240\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"))];
-                        }
-                        lv01Nm = address.lv01Nm, detail = address.detail;
-                        _b = iitc_plugin_quick_jump_read(detail, 4), kenName = _b[1], shiName = _b[3];
-                        put(view, "".concat(lat, ", ").concat(lng));
-                        put(view, "".concat(kenName, ", ").concat(shiName, ", ").concat(lv01Nm));
-                        return [2 /*return*/];
-                }
-            });
-        }); });
-    });
-    return terminal;
-}
 var Terminal = /** @class */ (function (_super) {
     iitc_plugin_quick_jump_extends(Terminal, _super);
-    function Terminal(_settings, options) {
+    function Terminal(options, _settings) {
         var _this = _super.call(this, options) || this;
         _this._settings = _settings;
         return _this;
     }
     Terminal.prototype.onAdd = function (parentMap) {
-        return createTerminal(this._settings, parentMap);
+        var _this = this;
+        var settings = this._settings;
+        var inputWaitInterval = settings.inputWaitInterval, locationUpdateWaitInterval = settings.locationUpdateWaitInterval;
+        var searchInput = (jsx("input", {}));
+        var outputList = jsx("ul", { class: Names.toastList });
+        var searchBar = jsx("div", iitc_plugin_quick_jump_assign({ class: Names.searchBar }, { children: searchInput }));
+        var crossHair = jsx("div", iitc_plugin_quick_jump_assign({ class: Names.crossHair }, { children: "\u253C" }));
+        var terminal = (jsxs("div", iitc_plugin_quick_jump_assign({ class: Names.terminal }, { children: [outputList, searchBar, crossHair] })));
+        terminal.classList.add(Names.hidden);
+        var view = (this._view = iitc_plugin_quick_jump_assign(iitc_plugin_quick_jump_assign({}, settings), { parentMap: parentMap, inputWaitInterval: inputWaitInterval, searchInput: searchInput, crossHair: crossHair, outputList: outputList }));
+        var searchBarHandler = createAsyncCancelScope();
+        function startSearch(inputWaitInterval) {
+            searchBarHandler(function (signal) {
+                return waitAndExecuteCommand(iitc_plugin_quick_jump_assign(iitc_plugin_quick_jump_assign({}, view), { inputWaitInterval: inputWaitInterval }), { signal: signal });
+            });
+        }
+        // ドキュメントで Ctrl + Q キーが押されたとき、表示しフォーカスを当てる
+        document.addEventListener("keyup", function (e) {
+            if (e.key === "q" && e.ctrlKey) {
+                terminal.classList.remove(Names.hidden);
+                searchInput.focus();
+                searchInput.select();
+            }
+        });
+        searchBar.addEventListener("keyup", function (e) {
+            switch (e.key) {
+                // 検索バーで Esc が押されたとき、隠す
+                case "Escape": {
+                    terminal.classList.add(Names.hidden);
+                    break;
+                }
+                // 検索バーで Enter が押されたとき、検索を開始する
+                case "Enter": {
+                    startSearch(100);
+                    break;
+                }
+            }
+        });
+        // 検索バーの入力が更新されたとき、遅延検索を開始する
+        searchInput.addEventListener("input", function () {
+            startSearch(inputWaitInterval);
+        });
+        // 主地図が移動し終わったとき、現在地を更新する
+        var locationAsyncScope = createAsyncCancelScope();
+        parentMap.addEventListener("moveend", function () {
+            locationAsyncScope(function (signal) { return iitc_plugin_quick_jump_awaiter(_this, void 0, void 0, function () {
+                var _a, lng, lat, address, lv01Nm, detail, _b, kenName, shiName;
+                return iitc_plugin_quick_jump_generator(this, function (_c) {
+                    switch (_c.label) {
+                        case 0: 
+                        // 少し待って
+                        return [4 /*yield*/, sleep(locationUpdateWaitInterval, { signal: signal })];
+                        case 1:
+                            // 少し待って
+                            _c.sent();
+                            _a = parentMap.getCenter(), lng = _a.lng, lat = _a.lat;
+                            return [4 /*yield*/, lonLatToAddress(lng, lat, { signal: signal })];
+                        case 2:
+                            address = _c.sent();
+                            // 表示
+                            if (!address) {
+                                return [2 /*return*/, put(view, "".concat(lng, ", ").concat(lat, ": \u306E\u4F4F\u6240\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"))];
+                            }
+                            lv01Nm = address.lv01Nm, detail = address.detail;
+                            _b = iitc_plugin_quick_jump_read(detail, 4), kenName = _b[1], shiName = _b[3];
+                            put(view, "".concat(lat, ", ").concat(lng));
+                            put(view, "".concat(kenName, ", ").concat(shiName, ", ").concat(lv01Nm));
+                            return [2 /*return*/];
+                    }
+                });
+            }); });
+        });
+        return terminal;
+    };
+    Terminal.prototype.put = function (message, options) {
+        if (this._view) {
+            put(this._view, message, options);
+        }
+        else {
+            console.log(message);
+        }
     };
     return Terminal;
 }(window.L.Control));
+function processDroppedFiles(e, parentMap, terminal, _a) {
+    var _b, _c;
+    var signal = _a.signal;
+    return iitc_plugin_quick_jump_awaiter(this, void 0, void 0, function () {
+        var file0, coordinate;
+        return iitc_plugin_quick_jump_generator(this, function (_d) {
+            switch (_d.label) {
+                case 0:
+                    file0 = (_c = (_b = e.dataTransfer) === null || _b === void 0 ? void 0 : _b.files) === null || _c === void 0 ? void 0 : _c[0];
+                    if (file0 === undefined) {
+                        return [2 /*return*/, terminal.put("ファイルがドロップされていません。")];
+                    }
+                    terminal.put("\u30D5\u30A1\u30A4\u30EB\u3092\u8AAD\u307F\u8FBC\u3093\u3067\u3044\u307E\u3059\u2026 ( ".concat(file0.name, " )"));
+                    return [4 /*yield*/, coordinateOfImage(file0, { signal: signal })];
+                case 1:
+                    coordinate = _d.sent();
+                    if (!coordinate) {
+                        return [2 /*return*/, terminal.put("\u5EA7\u6A19\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002( ".concat(file0.name, " )"))];
+                    }
+                    parentMap.setView(coordinate);
+                    terminal.put("".concat(coordinate.lat, ", ").concat(coordinate.lng, " \u306B\u79FB\u52D5\u3057\u307E\u3057\u305F\u3002( ").concat(file0.name, " )"));
+                    return [2 /*return*/];
+            }
+        });
+    });
+}
+function createDropZone(parentMap, terminal) {
+    var fileInput = jsx("input", { type: "file", name: "file" });
+    var dropZone = jsx("div", iitc_plugin_quick_jump_assign({ class: Names.dropZone }, { children: fileInput }));
+    dropZone.addEventListener("dragover", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.add(Names.dragOver);
+    }, false);
+    dropZone.addEventListener("dragleave", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove(Names.dragOver);
+    });
+    var fileDropScope = createAsyncCancelScope();
+    dropZone.addEventListener("drop", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove(Names.dragOver);
+        fileDropScope(function (signal) {
+            return processDroppedFiles(e, parentMap, terminal, { signal: signal });
+        });
+    });
+    return dropZone;
+}
+var DropZone = /** @class */ (function (_super) {
+    iitc_plugin_quick_jump_extends(DropZone, _super);
+    function DropZone(_terminal, options) {
+        var _this = _super.call(this, options) || this;
+        _this._terminal = _terminal;
+        return _this;
+    }
+    DropZone.prototype.onAdd = function (parentMap) {
+        return createDropZone(parentMap, this._terminal);
+    };
+    return DropZone;
+}(window.L.Control));
 function asyncMain() {
     return iitc_plugin_quick_jump_awaiter(this, void 0, void 0, function () {
+        var terminal;
         return iitc_plugin_quick_jump_generator(this, function (_a) {
             switch (_a.label) {
                 case 0: return [4 /*yield*/, waitElementLoaded()];
@@ -1268,10 +6531,11 @@ function asyncMain() {
                         return [2 /*return*/];
                     }
                     addStyle(css);
-                    new Terminal({
+                    terminal = new Terminal({ position: "bottomleft" }, {
                         inputWaitInterval: 3000,
                         locationUpdateWaitInterval: 3000,
-                    }, { position: "bottomleft" }).addTo(window.map);
+                    }).addTo(window.map);
+                    new DropZone(terminal, { position: "bottomleft" }).addTo(window.map);
                     return [2 /*return*/];
             }
         });
