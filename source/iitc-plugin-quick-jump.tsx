@@ -1,8 +1,11 @@
 // spell-checker: ignore chatinput
 import { coordinateOfImage } from "./coordinate-of-image";
 import { addStyle, waitElementLoaded } from "./document-extensions";
+import { imageFileToDataUrl } from "./image-file-to-data-url";
 import { lonLatToAddress } from "./gsi-reverse-geocoder";
 import { AsyncOptions, cancelToReject, sleep } from "./standard-extensions";
+
+const L = window.L;
 
 function handleAsyncError(promise: Promise<void>) {
     promise.catch((error) => console.error(error));
@@ -102,16 +105,10 @@ interface Settings {
     /** ミリ秒 */
     readonly locationUpdateWaitInterval: number;
 }
-interface View extends Settings {
-    parentMap: L.Map;
-    searchInput: HTMLInputElement;
-    crossHair: HTMLElement;
-    outputList: HTMLElement;
-}
 
 let itemCount = 0;
 function put(
-    { outputList }: View,
+    { outputList }: Terminal,
     message: string,
     { removeDeray = 5000, maxCount = 5 } = {}
 ) {
@@ -132,33 +129,51 @@ function put(
         })()
     );
 }
-async function waitAndExecuteCommand(
-    view: View,
-    options?: Readonly<AsyncOptions>
+async function moveTo(
+    terminal: Terminal,
+    coordinate: Readonly<{ lat: number; lng: number }>
 ) {
-    const { inputWaitInterval, searchInput } = view;
+    terminal.mainPinPopup.setContent("");
+    terminal.mainPin
+        .setOpacity(1)
+        .setLatLng(coordinate)
+        .setPopupContent(`${coordinate.lat}, ${coordinate.lng}`);
+    terminal.put(`${coordinate.lat}, ${coordinate.lng} に移動しました。`);
+    terminal.parentMap.setView(coordinate);
+}
+
+interface WaitOptions extends AsyncOptions {
+    inputWaitInterval?: number;
+}
+async function waitAndExecuteCommand(
+    terminal: Terminal,
+    options?: Readonly<WaitOptions>
+) {
+    const { searchInput } = terminal;
 
     // しばらく待ってから
-    await sleep(inputWaitInterval, options);
+    await sleep(
+        options?.inputWaitInterval ?? terminal.inputWaitInterval,
+        options
+    );
 
     // 最後のテキストボックスの値を元に座標を検索
     const { value } = searchInput;
-    return executeCommand(view, value, options);
+    return executeCommand(terminal, value, options);
 }
 async function executeCommand(
-    view: View,
+    terminal: Terminal,
     value: string,
     options?: Readonly<AsyncOptions>
 ) {
-    const { parentMap } = view;
     const coordinate = await searchCoordinate(value, options);
 
     if (!coordinate) {
-        return put(view, `${value} の座標が見つかりませんでした。`);
+        return put(terminal, `${value} の座標が見つかりませんでした。`);
     }
 
     // 親地図を指定した座標に移動
-    parentMap.setView(coordinate);
+    await moveTo(terminal, coordinate);
 }
 function createAsyncCancelScope() {
     let lastCancel = new AbortController();
@@ -172,51 +187,68 @@ function createAsyncCancelScope() {
         );
     };
 }
-class Terminal extends window.L.Control {
-    private _view?: View;
-    constructor(options: L.ControlOptions, private _settings: Settings) {
+class Terminal extends L.Control {
+    parentMap!: L.Map;
+    searchInput!: HTMLInputElement;
+    crossHair!: HTMLElement;
+    outputList!: HTMLElement;
+    mainPin!: L.Marker;
+    mainPinPopup!: L.Popup;
+    inputWaitInterval!: number;
+    locationUpdateWaitInterval!: number;
+
+    constructor(
+        options: L.ControlOptions,
+        public settings: Readonly<Settings>
+    ) {
         super(options);
     }
     override onAdd(parentMap: L.Map) {
-        const settings = this._settings;
-        const { inputWaitInterval, locationUpdateWaitInterval } = settings;
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        const terminal = this;
+        const settings = this.settings;
+        this.inputWaitInterval = settings.inputWaitInterval;
+        this.locationUpdateWaitInterval = settings.locationUpdateWaitInterval;
 
         const searchInput = (<input></input>) as HTMLInputElement;
         const outputList = <ul class={Names.toastList}></ul>;
         const searchBar = <div class={Names.searchBar}>{searchInput}</div>;
         const crossHair = <div class={Names.crossHair}>┼</div>;
-        const terminal = (
+        const terminalElement = (
             <div class={Names.terminal}>
                 {outputList}
                 {searchBar}
                 {crossHair}
             </div>
         );
-        terminal.classList.add(Names.hidden);
+        terminalElement.classList.add(Names.hidden);
 
-        const view = (this._view = {
-            ...settings,
-            parentMap,
-            inputWaitInterval,
-            searchInput,
-            crossHair,
-            outputList,
-        });
+        this.parentMap = parentMap;
+        this.searchInput = searchInput;
+        this.crossHair = crossHair;
+        this.outputList = outputList;
+        this.mainPinPopup = L.popup();
+        this.mainPin = L.marker([0, 0], {
+            opacity: 0,
+        })
+            .addTo(parentMap)
+            .on("click", () => {
+                this.mainPinPopup
+                    .setLatLng(this.mainPin.getLatLng())
+                    .openOn(this.parentMap);
+            });
 
         const searchBarHandler = createAsyncCancelScope();
         function startSearch(inputWaitInterval: number) {
             searchBarHandler((signal) =>
-                waitAndExecuteCommand(
-                    { ...view, inputWaitInterval },
-                    { signal }
-                )
+                waitAndExecuteCommand(terminal, { inputWaitInterval, signal })
             );
         }
 
         // ドキュメントで Ctrl + Q キーが押されたとき、表示しフォーカスを当てる
         document.addEventListener("keyup", (e) => {
             if (e.key === "q" && e.ctrlKey) {
-                terminal.classList.remove(Names.hidden);
+                terminalElement.classList.remove(Names.hidden);
                 searchInput.focus();
                 searchInput.select();
             }
@@ -225,7 +257,7 @@ class Terminal extends window.L.Control {
             switch (e.key) {
                 // 検索バーで Esc が押されたとき、隠す
                 case "Escape": {
-                    terminal.classList.add(Names.hidden);
+                    terminalElement.classList.add(Names.hidden);
                     break;
                 }
                 // 検索バーで Enter が押されたとき、検索を開始する
@@ -238,7 +270,7 @@ class Terminal extends window.L.Control {
 
         // 検索バーの入力が更新されたとき、遅延検索を開始する
         searchInput.addEventListener("input", () => {
-            startSearch(inputWaitInterval);
+            startSearch(this.inputWaitInterval);
         });
 
         // 主地図が移動し終わったとき、現在地を更新する
@@ -246,7 +278,7 @@ class Terminal extends window.L.Control {
         parentMap.addEventListener("moveend", () => {
             locationAsyncScope(async (signal) => {
                 // 少し待って
-                await sleep(locationUpdateWaitInterval, { signal });
+                await sleep(this.locationUpdateWaitInterval, { signal });
 
                 // 主地図の中心座標から住所を取得 ( 日本国内のみ )
                 const { lng, lat } = parentMap.getCenter();
@@ -255,29 +287,24 @@ class Terminal extends window.L.Control {
                 // 表示
                 if (!address) {
                     return put(
-                        view,
+                        terminal,
                         `${lng}, ${lat}: の住所が見つかりませんでした。`
                     );
                 }
                 const { lv01Nm, detail } = address;
                 const [, kenName, , shiName] = detail;
-                put(view, `${lat}, ${lng}`);
-                put(view, `${kenName}, ${shiName}, ${lv01Nm}`);
+                put(terminal, `${lat}, ${lng}`);
+                put(terminal, `${kenName}, ${shiName}, ${lv01Nm}`);
             });
         });
-        return terminal;
+        return terminalElement;
     }
     put(message: string, options?: Parameters<typeof put>[2]) {
-        if (this._view) {
-            put(this._view, message, options);
-        } else {
-            console.log(message);
-        }
+        put(this, message, options);
     }
 }
 async function processDroppedFiles(
     e: DragEvent,
-    parentMap: L.Map,
     terminal: Terminal,
     { signal }: Readonly<{ signal: AbortSignal }>
 ) {
@@ -289,15 +316,45 @@ async function processDroppedFiles(
     }
 
     terminal.put(`ファイルを読み込んでいます… ( ${file0.name} )`);
-    const coordinate = await coordinateOfImage(file0, { signal });
-    if (!coordinate) {
+    let coordinate;
+    try {
+        coordinate = await coordinateOfImage(file0, { signal });
+    } catch (e) {
         return terminal.put(`座標が見つかりませんでした。( ${file0.name} )`);
     }
-    parentMap.setView(coordinate);
-    terminal.put(
-        `${coordinate.lat}, ${coordinate.lng} に移動しました。( ${file0.name} )`
-    );
+    await moveTo(terminal, coordinate);
+
+    // ドロップされた画像ファイルをポップアップに表示する
+    let iconUrl;
+    try {
+        iconUrl = await imageFileToDataUrl(file0, {
+            signal,
+            maxWidth: 48,
+            maxHeight: 48,
+        });
+    } catch (e) {
+        // サポートされない画像形式
+        if (e instanceof Error && e.message.includes("Unsupported MIME type")) {
+            console.debug(`${e.message}: ${file0.name}`);
+        } else {
+            throw e;
+        }
+    }
+    if (iconUrl) {
+        terminal.mainPinPopup.setContent(
+            <>
+                <div>
+                    <img src={iconUrl} />
+                </div>
+                <div>{file0.name}</div>
+                <div>
+                    {coordinate.lat}, {coordinate.lng}
+                </div>
+            </>
+        );
+    }
 }
+
 function createDropZone(parentMap: L.Map, terminal: Terminal) {
     const fileInput = <input type="file" name="file" />;
     const dropZone = <div class={Names.dropZone}>{fileInput}</div>;
@@ -322,13 +379,11 @@ function createDropZone(parentMap: L.Map, terminal: Terminal) {
         e.stopPropagation();
         this.classList.remove(Names.dragOver);
 
-        fileDropScope((signal) =>
-            processDroppedFiles(e, parentMap, terminal, { signal })
-        );
+        fileDropScope((signal) => processDroppedFiles(e, terminal, { signal }));
     });
     return dropZone;
 }
-class DropZone extends window.L.Control {
+class DropZone extends L.Control {
     constructor(private _terminal: Terminal, options: L.ControlOptions) {
         super(options);
     }
@@ -343,6 +398,7 @@ async function asyncMain() {
         console.error("map が見つかりませんでした。");
         return;
     }
+    L.Icon.Default.imagePath = "https://unpkg.com/leaflet@1.3.1/dist/images/";
     addStyle(css);
 
     const terminal = new Terminal(

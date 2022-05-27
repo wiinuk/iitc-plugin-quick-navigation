@@ -1,6 +1,7 @@
 //@ts-check
 const UserScriptPlugin = require("./webpack-user-script-plugin");
 const { name: packageName } = require("./package.json");
+const webpack = require("webpack");
 
 const entry = `./source/${packageName}.user.ts`;
 
@@ -8,7 +9,12 @@ const entry = `./source/${packageName}.user.ts`;
 const config = {
     mode: "production",
     entry,
-    plugins: [UserScriptPlugin],
+    plugins: [
+        new webpack.DefinePlugin({
+            "process.browser": true,
+        }),
+        UserScriptPlugin,
+    ],
     module: {
         rules: [
             {

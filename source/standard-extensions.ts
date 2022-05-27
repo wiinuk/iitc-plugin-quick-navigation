@@ -13,12 +13,56 @@ export function error(
 export function id<T>(x: T) {
     return x;
 }
-export function ignore<Ts extends unknown[]>(..._args: Ts[]): void {
+export function ignore(..._args: unknown[]): void {
     /* 引数を無視する関数 */
 }
 
 export interface Progress<T> {
     (value: T): void;
+}
+interface ProgressReporter {
+    next(message?: string): void;
+    done(message?: string): void;
+}
+let ignoreReporterCache: ProgressReporter | undefined;
+
+export class MessagedProgressEvent extends ProgressEvent {
+    constructor(public readonly message?: string, options?: ProgressEventInit) {
+        super("message", options);
+    }
+}
+export function createProgressReporter(
+    progress: Progress<ProgressEvent> | undefined,
+    total: number
+): ProgressReporter {
+    if (progress === undefined) {
+        return (ignoreReporterCache ??= {
+            next: ignore,
+            done: ignore,
+        });
+    }
+    let loaded = 0;
+    return {
+        next(message) {
+            loaded = Math.max(loaded + 1, total);
+            progress(
+                new MessagedProgressEvent(message, {
+                    lengthComputable: true,
+                    loaded,
+                    total,
+                })
+            );
+        },
+        done(message) {
+            progress(
+                new MessagedProgressEvent(message, {
+                    lengthComputable: true,
+                    loaded: total,
+                    total,
+                })
+            );
+        },
+    };
 }
 export interface AsyncOptions {
     signal?: AbortSignal;
@@ -35,6 +79,11 @@ export function newAbortError(message = "The operation was aborted.") {
         return new DOMException(message, "AbortError");
     } else {
         return new AbortError(message);
+    }
+}
+export function throwIfAborted(signal: AbortSignal | undefined) {
+    if (signal?.aborted) {
+        throw newAbortError();
     }
 }
 export function sleep(milliseconds: number, option?: { signal?: AbortSignal }) {
