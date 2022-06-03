@@ -10,6 +10,15 @@ export function error(
     );
     throw new Error(message);
 }
+export function exhaustive(value: never) {
+    return error`unexpected value: ${value}`;
+}
+
+export type cast<T, K> = T extends K ? T : K;
+export type Writable<T> = {
+    -readonly [k in keyof T]: T[k];
+};
+export type Id<T> = (x: T) => T;
 export function id<T>(x: T) {
     return x;
 }

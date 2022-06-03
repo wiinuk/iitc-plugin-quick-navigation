@@ -1,9 +1,9 @@
-// spell-checker: ignore chatinput
+// spell-checker: ignore bottomleft moveend
 import { coordinateOfImage } from "./coordinate-of-image";
 import { addStyle, waitElementLoaded } from "./document-extensions";
-import { imageFileToDataUrl } from "./image-file-to-data-url";
 import { lonLatToAddress } from "./gsi-reverse-geocoder";
 import { AsyncOptions, cancelToReject, sleep } from "./standard-extensions";
+import { imageFileToDataUrl } from "./image-file-to-data-url";
 
 const L = window.L;
 
@@ -22,6 +22,7 @@ const Names = Object.freeze({
     toastItem: `${namespace}-toast-item`,
     dropZone: `${namespace}-drop-zone`,
     dragOver: `${namespace}-drag-over`,
+    mainPinPopup: `${namespace}-main-pin-popup`,
 });
 
 const css = `
@@ -82,6 +83,9 @@ const css = `
     .${Names.dragOver} {
         background: #ddd;
     }
+    .${Names.mainPinPopup} {
+        text-align: center;
+    }
 `;
 
 async function searchCoordinate(
@@ -133,7 +137,11 @@ async function moveTo(
     terminal: Terminal,
     coordinate: Readonly<{ lat: number; lng: number }>
 ) {
-    terminal.mainPinPopup.setContent("");
+    terminal.mainPinPopup.setContent(
+        <div class={Names.mainPinPopup}>
+            {coordinate.lat}, {coordinate.lng}
+        </div>
+    );
     terminal.mainPin
         .setOpacity(1)
         .setLatLng(coordinate)
@@ -342,15 +350,12 @@ async function processDroppedFiles(
     }
     if (iconUrl) {
         terminal.mainPinPopup.setContent(
-            <>
-                <div>
-                    <img src={iconUrl} />
-                </div>
-                <div>{file0.name}</div>
+            <div class={Names.mainPinPopup}>
+                <img src={iconUrl} title={file0.name} />
                 <div>
                     {coordinate.lat}, {coordinate.lng}
                 </div>
-            </>
+            </div>
         );
     }
 }

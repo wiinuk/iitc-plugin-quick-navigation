@@ -32,6 +32,7 @@ const config = {
     rules: {
         "rulesdir/no-unused-await": "warn",
         "rulesdir/no-unused-optional-chain": "warn",
+        "rulesdir/no-unused-spell-checker-directive": "warn",
         "@typescript-eslint/no-floating-promises": [
             "warn",
             { ignoreVoid: true },
