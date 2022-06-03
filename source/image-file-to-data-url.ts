@@ -1,3 +1,4 @@
+// spell-checker: ignore heic heif
 import heic2any from "heic2any";
 import jimp from "jimp/browser/lib/jimp";
 import {
