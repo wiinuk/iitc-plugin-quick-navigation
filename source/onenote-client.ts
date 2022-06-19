@@ -39,46 +39,31 @@ function getLocalStorageStorage(): AsyncStorage {
 }
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
-async function getJson(storage: AsyncStorage, key: string) {
-    const json = await storage.getItem(key);
-    return json === null ? undefined : (JSON.parse(json) as Json);
+async function loginSsoOrPopupCore(
+    client: msal.PublicClientApplication,
+    scopes: string[]
+) {
+    return await client.loginPopup({
+        scopes,
+        redirectUri: "http://localhost:3000/blank.html",
+    });
 }
-async function setJson(storage: AsyncStorage, key: string, value: Json) {
-    await storage.setItem(key, JSON.stringify(value));
-}
-const loginHintKey = "loginHint_5ba5df4a-da92-4c34-8298-6710f010f1d3";
-async function loginSsoOrPopup(
+function loginSsoOrPopup(
     client: msal.PublicClientApplication,
     scopes: string[],
+    getLoginButton: () => HTMLElement,
     options?: Readonly<LoginOptions>
 ) {
-    // 保存してあるユーザー情報を取得
-    const storage = options?.persistentStorage ?? getLocalStorageStorage();
-    let loginHint = await getJson(storage, loginHintKey);
-    if (typeof loginHint !== "string") {
-        loginHint = undefined;
-    }
-
-    let response;
-    try {
-        // シングルサインオンを試みる
-        response = await client.ssoSilent({ scopes, loginHint });
-    } catch (e) {
-        if (e instanceof msal.InteractionRequiredAuthError) {
-            // シングルサインオンできなかった場合、ポップアップログインを試みる
-            response = await client.loginPopup({ scopes });
-        } else {
-            throw e;
-        }
-    }
-    // ログインヒントを保存
-    const userName = response.account?.name;
-    if (userName !== undefined) {
-        await setJson(storage, loginHintKey, userName);
-    }
-    return response;
+    return new Promise<msal.AuthenticationResult>((resolve, reject) => {
+        const button = getLoginButton();
+        button.append("Login");
+        button.addEventListener("click", () =>
+            loginSsoOrPopupCore(client, scopes).then(resolve, reject)
+        );
+    });
 }
 export async function createAndLoginOneNoteClient(
+    getLoginButton: () => HTMLElement,
     options?: Readonly<LoginOptions>
 ) {
     const scopes: typeof scope[] = [scope];
@@ -91,7 +76,7 @@ export async function createAndLoginOneNoteClient(
             cacheLocation: "localStorage",
         },
     });
-    await loginSsoOrPopup(client, scopes, options);
+    await loginSsoOrPopup(client, scopes, getLoginButton, options);
     const [account = error`アカウントが存在しません`] = client.getAllAccounts();
 
     const authProvider = new AuthCodeMSALBrowserAuthenticationProvider(client, {

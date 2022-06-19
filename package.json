@@ -51,6 +51,7 @@
     "@microsoft/microsoft-graph-client": "^3.0.2",
     "exifreader": "^4.5.0",
     "heic2any": "^0.0.3",
+    "isomorphic-fetch": "^3.0.0",
     "jimp": "^0.16.1",
     "tslib": "^2.3.1"
   }
