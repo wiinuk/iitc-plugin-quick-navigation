@@ -1,8 +1,8 @@
-# iitc-plugin-quick-jump
+# iitc-plugin-quick-navigation
 
 ## 使い方
 
-[インストール](../../raw/master/iitc-plugin-quick-jump.user.js)
+[インストール](../../raw/master/iitc-plugin-quick-navigation.user.js)
 
 // TODO: 操作説明
 

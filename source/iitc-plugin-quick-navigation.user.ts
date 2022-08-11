@@ -1,11 +1,11 @@
 // ==UserScript==
-// @id           iitc-plugin-quick-jump@wiinuk
-// @name         IITC plugin: Quick jump
+// @id           iitc-plugin-quick-navigation@wiinuk
+// @name         IITC plugin: Quick navigation
 // @category     Controls
-// @namespace    https://github.com/wiinuk/iitc-plugin-quick-jump
-// @downloadURL  https://github.com/wiinuk/iitc-plugin-quick-jump/raw/master/iitc-plugin-quick-jump.user.js
-// @updateURL    https://github.com/wiinuk/iitc-plugin-quick-jump/raw/master/iitc-plugin-quick-jump.user.js
-// @homepageURL  https://github.com/wiinuk/iitc-plugin-quick-jump
+// @namespace    https://github.com/wiinuk/iitc-plugin-quick-navigation
+// @downloadURL  https://github.com/wiinuk/iitc-plugin-quick-navigation/raw/master/iitc-plugin-quick-navigation.user.js
+// @updateURL    https://github.com/wiinuk/iitc-plugin-quick-navigation/raw/master/iitc-plugin-quick-navigation.user.js
+// @homepageURL  https://github.com/wiinuk/iitc-plugin-quick-navigation
 // @version      0.2.0
 // @description  Add the ability to move to specified coordinates.
 // @author       Wiinuk
@@ -21,9 +21,9 @@
 // @grant        GM_info
 // ==/UserScript==
 
-import * as MainModule from "./iitc-plugin-quick-jump";
+import * as MainModule from "./iitc-plugin-quick-navigation";
 
-window["_iitc-plugin-quick-jump-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"] =
+window["_iitc-plugin-quick-navigation-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"] =
     MainModule;
 
 interface PluginInfo {
@@ -54,13 +54,13 @@ function wrapper(plugin_info: PluginInfo) {
 
     // メタデータを追加する
     plugin_info.dateTimeVersion = "20220328000000";
-    plugin_info.pluginId = "quick-jump";
+    plugin_info.pluginId = "quick-navigation";
 
     // setup 内で IITC はロード済みと仮定できる
     const setup: SetupHook = function setup() {
         const pluginModule =
             window[
-                "_iitc-plugin-quick-jump-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"
+                "_iitc-plugin-quick-navigation-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"
             ];
         if (pluginModule == null) {
             console.error(

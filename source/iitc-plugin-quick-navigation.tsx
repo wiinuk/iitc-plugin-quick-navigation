@@ -12,7 +12,7 @@ function handleAsyncError(promise: Promise<void>) {
     promise.catch((error) => console.error(error));
 }
 
-const namespace = "iitc-plugin-quick-jump";
+const namespace = "iitc-plugin-quick-navigation";
 const Names = Object.freeze({
     hidden: `${namespace}-hidden`,
     searchBar: `${namespace}-search-bar`,

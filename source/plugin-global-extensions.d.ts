@@ -8,5 +8,5 @@ declare interface Window {
 }
 /** このプラグインの拡張 */
 declare interface Window {
-    "_iitc-plugin-quick-jump-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"?: typeof import("./iitc-plugin-quick-jump");
+    "_iitc-plugin-quick-navigation-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"?: typeof import("./iitc-plugin-quick-navigation");
 }
