@@ -35,15 +35,18 @@ interface ProgressReporter {
 }
 let ignoreReporterCache: ProgressReporter | undefined;
 
-export class MessagedProgressEvent extends ProgressEvent {
-    constructor(public readonly message?: string, options?: ProgressEventInit) {
-        super("message", options);
-    }
-}
 export function createProgressReporter(
     progress: Progress<ProgressEvent> | undefined,
     total: number
 ): ProgressReporter {
+    class MessagedProgressEvent extends ProgressEvent {
+        constructor(
+            public readonly message?: string,
+            options?: ProgressEventInit
+        ) {
+            super("message", options);
+        }
+    }
     if (progress === undefined) {
         return (ignoreReporterCache ??= {
             next: ignore,
