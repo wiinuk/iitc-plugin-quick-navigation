@@ -135,3 +135,27 @@ export function cancelToReject<T>(
         throw e;
     });
 }
+
+export function createAsyncCancelScope(
+    handleAsyncError: (promise: Promise<void>) => void
+) {
+    let lastCancel = new AbortController();
+    return (process: (signal: AbortSignal) => Promise<void>) => {
+        // 前の操作をキャンセル
+        lastCancel.abort();
+        lastCancel = new AbortController();
+        handleAsyncError(
+            // キャンセル例外を無視する
+            cancelToReject(process(lastCancel.signal))
+        );
+    };
+}
+
+export function assertTrue<_T extends true>() {
+    // 型レベルアサーション関数
+}
+export type equals<T1, T2> = [T1] extends [T2]
+    ? [T2] extends [T1]
+        ? true
+        : false
+    : false;

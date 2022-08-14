@@ -1,10 +1,11 @@
-// spell-checker: ignore bottomleft moveend onenote
-import { coordinateOfImage } from "./coordinate-of-image";
+// spell-checker: ignore moveend onenote
 import { addStyle, waitElementLoaded } from "./document-extensions";
-import { lonLatToAddress } from "./gsi-reverse-geocoder";
-import { AsyncOptions, cancelToReject, sleep } from "./standard-extensions";
-import { imageFileToDataUrl } from "./image-file-to-data-url";
-import { createAndLoginOneNoteClient } from "./onenote-client";
+import {
+    AsyncOptions,
+    createAsyncCancelScope,
+    sleep,
+} from "./standard-extensions";
+import * as UndoList from "./undo-list";
 
 const L = window.L;
 
@@ -16,40 +17,54 @@ const namespace = "iitc-plugin-quick-navigation";
 const Names = Object.freeze({
     hidden: `${namespace}-hidden`,
     searchBar: `${namespace}-search-bar`,
-    terminal: `${namespace}-terminal`,
-    outputList: `${namespace}-output-list`,
-    crossHair: `${namespace}-cross-hair`,
     toastList: `${namespace}-toast-list`,
     toastItem: `${namespace}-toast-item`,
-    dropZone: `${namespace}-drop-zone`,
     dragOver: `${namespace}-drag-over`,
     mainPinPopup: `${namespace}-main-pin-popup`,
     oneNoteLoginButton: `${namespace}-one-note-login-button`,
+    navigation: `${namespace}-navigation`,
+    navigationIcons: `${namespace}-navigation-icons`,
+    historyLineHead: `${namespace}-history-line-head`,
 });
 
+const materialSymbols = Object.freeze({
+    arrow_back: "\ue5c4",
+    arrow_forward: "\ue5c8",
+});
 const css = `
-    .${Names.terminal} {
+    @import url(https://fonts.googleapis.com/icon?family=Material+Icons);
+
+    .${Names.navigation} {
         width: 100%;
     }
+
+    ul.${Names.navigationIcons} {
+        display: table;
+        padding: 0;
+    }
+    ul.${Names.navigationIcons} > li {
+        display: table-cell;
+        text-align: center;
+        vertical-align: middle;
+    }
+    ul.${Names.navigationIcons} > li > button {
+        font-family: "Material Icons";
+        width: 1.5rem;
+        height: 1.5rem;
+        margin: 0.3rem;
+        padding: 0;
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px #ccc;
+        border: none;
+    }
+
     .${Names.searchBar} {
         background: rgba(8, 48, 78, 0.9);
         border: 1px solid #20A8B1;
     }
     .${Names.searchBar} input {
         width: 100%;
-    }
-    .${Names.crossHair} {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 3000;
-
-        font-size: 24px;
-        font-family: sans-serif;
-        color: #FFF;
-        text-shadow: 0 0 0.3em #000, 0 0 0.5em #000;
-        filter: drop-shadow(0 0 0.5em #000);
     }
     .${Names.hidden} {
         display: none;
@@ -76,12 +91,6 @@ const css = `
         color: #444;
         background: rgba(0 0 0 / 0%);
     }
-    .${Names.dropZone} {
-        background: white;
-        padding: 0.5rem;
-        border-radius: 0.3rem;
-        box-shadow: 0 0 0.5rem black;
-    }
     .${Names.dragOver} {
         background: #ddd;
     }
@@ -96,6 +105,11 @@ const css = `
         box-shadow: 0 0 0.5rem black;
     }
 `;
+
+let nextId = 0;
+function uniqueId(name: string) {
+    return `${name}-${++nextId}`;
+}
 
 function parseCoordinate(searchText: string) {
     const match = searchText.match(
@@ -114,142 +128,182 @@ interface Settings {
     readonly inputWaitInterval: number;
     /** ミリ秒 */
     readonly locationUpdateWaitInterval: number;
+    /** m */
+    readonly minAutoSaveHistoryDistance: number;
 }
 
-let itemCount = 0;
-function put(
-    { outputList }: Terminal,
-    message: string | HTMLElement,
-    { removeDeray = 5000, maxCount = 5 } = {}
-) {
-    const item =
-        typeof message === "string" ? (
-            <li class={Names.toastItem}>
-                <input value={message} />
-            </li>
-        ) : (
-            message
-        );
-    outputList.append(item);
-    itemCount++;
-    handleAsyncError(
-        (async () => {
-            await sleep(removeDeray);
-            if (maxCount < itemCount) {
-                outputList.firstElementChild?.remove();
-                itemCount--;
-            }
-        })()
-    );
+type Suggestion = Readonly<{
+    type: "coordinate";
+    coordinate: L.LatLngLiteral;
+}>;
+function suggestionListItem(suggestion: Suggestion) {
+    switch (suggestion.type) {
+        case "coordinate": {
+            const { lat, lng } = suggestion.coordinate;
+            return (
+                <li class={Names.toastItem}>
+                    <input value={`${lat},${lng}`} />
+                </li>
+            );
+        }
+    }
 }
-async function moveTo(
-    terminal: Terminal,
+function moveTo(
+    navigation: Navigation,
     coordinate: Readonly<{ lat: number; lng: number }>
 ) {
-    terminal.mainPinPopup.setContent(
+    navigation.mainPinPopup.setContent(
         <div class={Names.mainPinPopup}>
             {coordinate.lat}, {coordinate.lng}
         </div>
     );
-    terminal.mainPin
+    navigation.mainPin
         .setOpacity(1)
         .setLatLng(coordinate)
         .setPopupContent(`${coordinate.lat}, ${coordinate.lng}`);
-    terminal.put(`${coordinate.lat}, ${coordinate.lng} に移動しました。`);
-    terminal.parentMap.setView(coordinate);
+    navigation.parentMap.setView(coordinate);
 }
 
 interface WaitOptions extends AsyncOptions {
     inputWaitInterval?: number;
 }
-async function waitAndExecuteCommand(
-    terminal: Terminal,
+async function waitAndSuggestLocations(
+    navigation: Navigation,
     options?: Readonly<WaitOptions>
 ) {
-    const { searchInput } = terminal;
+    const { searchInput } = navigation;
 
     // しばらく待ってから
     await sleep(
-        options?.inputWaitInterval ?? terminal.inputWaitInterval,
+        options?.inputWaitInterval ?? navigation.inputWaitInterval,
         options
     );
 
     // 最後のテキストボックスの値を元に座標を検索
     const { value } = searchInput;
-    return executeCommand(terminal, value, options);
+    return suggestLocations(navigation, value, options);
 }
-async function executeCommand(
-    terminal: Terminal,
+async function suggestLocations(
+    navigation: Navigation,
     command: string,
     options?: Readonly<AsyncOptions>
 ) {
     const coordinate = parseCoordinate(command);
     if (coordinate) {
-        return await moveTo(terminal, coordinate);
+        setSuggestions(navigation, [{ type: "coordinate", coordinate }]);
     }
-    return await executeExpression(terminal, command, options);
 }
-async function executeExpression(
-    terminal: Terminal,
-    source: string,
+async function waitAndStartNavigation(
+    navigation: Navigation,
     options?: Readonly<AsyncOptions>
 ) {
-    const command = source.trim().toLocaleLowerCase();
-    if (command === "waypoint-list" || command === "wl") {
-        return await showWaypointList(terminal, options);
+    const { searchInput } = navigation;
+
+    // しばらく待ってから
+    await sleep(100, options);
+
+    // 最後のテキストボックスの値を元に座標を検索して移動
+    const { value } = searchInput;
+    return startNavigation(navigation, value, options);
+}
+async function startNavigation(
+    navigation: Navigation,
+    command: string,
+    options?: Readonly<AsyncOptions>
+) {
+    const coordinate = parseCoordinate(command);
+    if (coordinate) {
+        addCoordinateToHistory(navigation, coordinate);
+        moveTo(navigation, coordinate);
     }
 }
-async function showWaypointList(
-    terminal: Terminal,
-    _options?: Readonly<AsyncOptions>
+function setSuggestions(
+    { outputList }: Navigation,
+    suggestions: ReadonlyArray<Suggestion>
 ) {
-    terminal.put;
-    const client = await createAndLoginOneNoteClient(() => {
-        const button = (
-            <button class={Names.oneNoteLoginButton}>ログイン</button>
-        );
-        put(terminal, button);
-        return button;
-    });
-    put(terminal, "ノートブック一覧");
-    const notebooks = await client.notebooks();
-    for (const notebook of notebooks) {
-        put(terminal, notebook.displayName ?? notebook.id);
+    outputList.innerHTML = "";
+    for (const suggestion of suggestions) {
+        outputList.append(suggestionListItem(suggestion));
     }
-    const notebook0 = notebooks[0];
-    if (notebook0) {
-        put(
-            terminal,
-            `${notebook0.displayName ?? notebook0.id} のセクション一覧`
-        );
-        const sections = await client.sectionsInNotebook(notebook0.id);
-        for (const section of sections) {
-            put(terminal, section.displayName ?? section.id);
-        }
-    }
+}
+function updateHistoryLine({
+    history,
+    historyPolyline,
+    parentMap,
+}: Navigation) {
+    console.log(JSON.stringify([...UndoList.allItems(history)]));
+    const coordinates = [...UndoList.allItems(history)];
+    insertMidCoordinates(parentMap, coordinates, 60);
+    historyPolyline.setLatLngs(coordinates);
+    console.log(historyPolyline);
+}
+function addCoordinateToHistory(
+    navigation: Navigation,
+    coordinate: L.LatLngLiteral
+) {
+    navigation.history = UndoList.add(navigation.history, coordinate);
+    updateHistoryLine(navigation);
 }
 
-function createAsyncCancelScope() {
-    let lastCancel = new AbortController();
-    return (process: (signal: AbortSignal) => Promise<void>) => {
-        // 前の操作をキャンセル
-        lastCancel.abort();
-        lastCancel = new AbortController();
-        handleAsyncError(
-            // キャンセル例外を無視する
-            cancelToReject(process(lastCancel.signal))
-        );
-    };
+function getPrivateMapRootElement(map: L.Map) {
+    return map.getContainer().querySelector("svg");
 }
-class Terminal extends L.Control {
+function getPrivatePathElement(path: L.Path) {
+    const e = (path as { _path?: unknown })._path;
+    return e != null && e instanceof SVGPathElement ? e : null;
+}
+function distanceMeter(a: L.LatLngLiteral, b: L.LatLngLiteral) {
+    return L.latLng(a).distanceTo(L.latLng(b));
+}
+
+function insertMidCoordinates(
+    map: L.Map,
+    coordinates: L.LatLngLiteral[],
+    spacingPixel: number
+) {
+    console.log(JSON.stringify(coordinates));
+    for (let i = 1; i < coordinates.length; ++i) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const c0 = coordinates[i - 1]!;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const c1 = coordinates[i]!;
+
+        const p0 = map.project(c0);
+        const p1 = map.project(c1);
+
+        console.log(`${i}: ${JSON.stringify({ p0, p1 })}`);
+
+        let dx = p1.x - p0.x,
+            dy = p1.y - p0.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const count = Math.floor(d / spacingPixel);
+        dx /= count;
+        dy /= count;
+
+        console.log(`${i}: ${JSON.stringify({ d, count })}`);
+
+        for (let j = count - 1; j > 0; --j) {
+            const px = p0.x + dx * j + Math.random() * spacingPixel * 0.1;
+            const py = p0.y + dy * j + Math.random() * spacingPixel * 0.1;
+            const c = map.unproject([px, py]);
+            coordinates.splice(i, 0, c);
+        }
+        if (count > 0) {
+            i += count - 1;
+        }
+    }
+    console.log(JSON.stringify(coordinates));
+}
+class Navigation extends L.Control {
     parentMap!: L.Map;
     searchInput!: HTMLInputElement;
-    crossHair!: HTMLElement;
     outputList!: HTMLElement;
     mainPin!: L.Marker;
     mainPinPopup!: L.Popup;
     inputWaitInterval!: number;
     locationUpdateWaitInterval!: number;
+    history: UndoList.UndoList<L.LatLngLiteral> = UndoList.create();
+    historyPolyline!: L.Polyline;
 
     constructor(
         options: L.ControlOptions,
@@ -259,7 +313,7 @@ class Terminal extends L.Control {
     }
     override onAdd(parentMap: L.Map) {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
-        const terminal = this;
+        const navigation = this;
         const settings = this.settings;
         this.inputWaitInterval = settings.inputWaitInterval;
         this.locationUpdateWaitInterval = settings.locationUpdateWaitInterval;
@@ -267,20 +321,64 @@ class Terminal extends L.Control {
         const searchInput = (<input></input>) as HTMLInputElement;
         const outputList = <ul class={Names.toastList}></ul>;
         const searchBar = <div class={Names.searchBar}>{searchInput}</div>;
-        const crossHair = <div class={Names.crossHair}>┼</div>;
-        const terminalElement = (
-            <div class={Names.terminal}>
-                {outputList}
-                {searchBar}
-                {crossHair}
+        const leftArrowButton = <button>{materialSymbols.arrow_back}</button>;
+        const rightArrowButton = (
+            <button>{materialSymbols.arrow_forward}</button>
+        );
+        const navigationElement = (
+            <div class={Names.navigation}>
+                <ul class={Names.navigationIcons}>
+                    <li>{leftArrowButton}</li>
+                    <li>{rightArrowButton}</li>
+                    <li>
+                        <div>
+                            {searchBar}
+                            {outputList}
+                        </div>
+                    </li>
+                </ul>
             </div>
         );
-        terminalElement.classList.add(Names.hidden);
+
+        const headId = uniqueId(Names.historyLineHead);
+        getPrivateMapRootElement(parentMap)?.insertAdjacentElement(
+            "beforeend",
+            <defs>
+                <marker
+                    id={headId}
+                    markerWidth="4"
+                    markerHeight="4"
+                    orient="auto"
+                    refY="2"
+                >
+                    <path
+                        d="M0,0 L4,2 0,4"
+                        stroke="burlywood"
+                        stroke-width="0.5"
+                        fill="none"
+                    />
+                </marker>
+            </defs>
+        );
 
         this.parentMap = parentMap;
         this.searchInput = searchInput;
-        this.crossHair = crossHair;
         this.outputList = outputList;
+        this.historyPolyline = L.polyline([], {
+            weight: 5,
+            fill: false,
+            stroke: false,
+            color: "black",
+            className: "history-polyline",
+        }).addTo(parentMap);
+        {
+            const e = getPrivatePathElement(this.historyPolyline);
+            e?.setAttribute("stroke-width", "5");
+            e?.setAttribute("marker-start", `url(#${headId})`);
+            e?.setAttribute("marker-mid", `url(#${headId})`);
+            e?.setAttribute("marker-end", `url(#${headId})`);
+        }
+
         this.mainPinPopup = L.popup();
         this.mainPin = L.marker([0, 0], {
             opacity: 0,
@@ -292,17 +390,25 @@ class Terminal extends L.Control {
                     .openOn(this.parentMap);
             });
 
-        const searchBarHandler = createAsyncCancelScope();
-        function startSearch(inputWaitInterval: number) {
+        const searchBarHandler = createAsyncCancelScope(handleAsyncError);
+        function updateSuggestions(inputWaitInterval: number) {
             searchBarHandler((signal) =>
-                waitAndExecuteCommand(terminal, { inputWaitInterval, signal })
+                waitAndSuggestLocations(navigation, {
+                    inputWaitInterval,
+                    signal,
+                })
+            );
+        }
+        function startNavigation() {
+            searchBarHandler((signal) =>
+                waitAndStartNavigation(navigation, { signal })
             );
         }
 
         // ドキュメントで Ctrl + Q キーが押されたとき、表示しフォーカスを当てる
         document.addEventListener("keyup", (e) => {
             if (e.key === "q" && e.ctrlKey) {
-                terminalElement.classList.remove(Names.hidden);
+                navigationElement.classList.remove(Names.hidden);
                 searchInput.focus();
                 searchInput.select();
             }
@@ -311,135 +417,59 @@ class Terminal extends L.Control {
             switch (e.key) {
                 // 検索バーで Esc が押されたとき、隠す
                 case "Escape": {
-                    terminalElement.classList.add(Names.hidden);
+                    navigationElement.classList.add(Names.hidden);
                     break;
                 }
                 // 検索バーで Enter が押されたとき、検索を開始する
                 case "Enter": {
-                    startSearch(100);
+                    startNavigation();
                     break;
                 }
             }
         });
-
-        // 検索バーの入力が更新されたとき、遅延検索を開始する
+        // 戻るボタンが押されたとき
+        leftArrowButton.addEventListener("click", () => {
+            navigation.history = UndoList.undo(navigation.history);
+            const coordinate = UndoList.currentItem(navigation.history);
+            if (coordinate) {
+                moveTo(navigation, coordinate);
+            }
+        });
+        // 進むボタンが押されたとき
+        rightArrowButton.addEventListener("click", () => {
+            navigation.history = UndoList.redo(navigation.history);
+            const coordinate = UndoList.currentItem(navigation.history);
+            if (coordinate) {
+                moveTo(navigation, coordinate);
+            }
+        });
+        // 検索バーの入力が更新されたとき、補完後補表示を開始する
         searchInput.addEventListener("input", () => {
-            startSearch(this.inputWaitInterval);
+            updateSuggestions(this.inputWaitInterval);
         });
 
         // 主地図が移動し終わったとき、現在地を更新する
-        const locationAsyncScope = createAsyncCancelScope();
+        const locationAsyncScope = createAsyncCancelScope(handleAsyncError);
         parentMap.addEventListener("moveend", () => {
             locationAsyncScope(async (signal) => {
-                // 少し待って
                 await sleep(this.locationUpdateWaitInterval, { signal });
 
-                // 主地図の中心座標から住所を取得 ( 日本国内のみ )
-                const { lng, lat } = parentMap.getCenter();
-                const address = await lonLatToAddress(lng, lat, { signal });
-
-                // 表示
-                if (!address) {
-                    return put(
-                        terminal,
-                        `${lng}, ${lat}: の住所が見つかりませんでした。`
-                    );
+                const coordinate = parentMap.getCenter();
+                if (
+                    !UndoList.find(
+                        navigation.history,
+                        (item) =>
+                            distanceMeter(item, coordinate) <
+                            this.settings.minAutoSaveHistoryDistance
+                    )
+                ) {
+                    addCoordinateToHistory(navigation, coordinate);
                 }
-                const { lv01Nm, detail } = address;
-                const [, kenName, , shiName] = detail;
-                put(terminal, `${lat}, ${lng}`);
-                put(terminal, `${kenName}, ${shiName}, ${lv01Nm}`);
             });
         });
-        return terminalElement;
-    }
-    put(message: string | HTMLElement, options?: Parameters<typeof put>[2]) {
-        put(this, message, options);
-    }
-}
-async function processDroppedFiles(
-    e: DragEvent,
-    terminal: Terminal,
-    { signal }: Readonly<{ signal: AbortSignal }>
-) {
-    // ドロップされた画像ファイルの位置に移動する
 
-    const file0 = e.dataTransfer?.files?.[0];
-    if (file0 === undefined) {
-        return terminal.put("ファイルがドロップされていません。");
-    }
-
-    terminal.put(`ファイルを読み込んでいます… ( ${file0.name} )`);
-    let coordinate;
-    try {
-        coordinate = await coordinateOfImage(file0, { signal });
-    } catch (e) {
-        return terminal.put(`座標が見つかりませんでした。( ${file0.name} )`);
-    }
-    await moveTo(terminal, coordinate);
-
-    // ドロップされた画像ファイルをポップアップに表示する
-    let iconUrl;
-    try {
-        iconUrl = await imageFileToDataUrl(file0, {
-            signal,
-            maxWidth: 48,
-            maxHeight: 48,
-        });
-    } catch (e) {
-        // サポートされない画像形式
-        if (e instanceof Error && e.message.includes("Unsupported MIME type")) {
-            console.debug(`${e.message}: ${file0.name}`);
-        } else {
-            throw e;
-        }
-    }
-    if (iconUrl) {
-        terminal.mainPinPopup.setContent(
-            <div class={Names.mainPinPopup}>
-                <img src={iconUrl} title={file0.name} />
-                <div>
-                    {coordinate.lat}, {coordinate.lng}
-                </div>
-            </div>
-        );
-    }
-}
-
-function createDropZone(parentMap: L.Map, terminal: Terminal) {
-    const fileInput = <input type="file" name="file" />;
-    const dropZone = <div class={Names.dropZone}>{fileInput}</div>;
-    dropZone.addEventListener(
-        "dragover",
-        function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            this.classList.add(Names.dragOver);
-        },
-        false
-    );
-    dropZone.addEventListener("dragleave", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.classList.remove(Names.dragOver);
-    });
-
-    const fileDropScope = createAsyncCancelScope();
-    dropZone.addEventListener("drop", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.classList.remove(Names.dragOver);
-
-        fileDropScope((signal) => processDroppedFiles(e, terminal, { signal }));
-    });
-    return dropZone;
-}
-class DropZone extends L.Control {
-    constructor(private _terminal: Terminal, options: L.ControlOptions) {
-        super(options);
-    }
-    override onAdd(parentMap: L.Map) {
-        return createDropZone(parentMap, this._terminal);
+        addCoordinateToHistory(navigation, parentMap.getCenter());
+        return navigationElement;
     }
 }
 async function asyncMain() {
@@ -449,18 +479,18 @@ async function asyncMain() {
         console.error("map が見つかりませんでした。");
         return;
     }
-    L.Icon.Default.imagePath = "https://unpkg.com/leaflet@1.3.1/dist/images/";
+    L.version;
+    L.Icon.Default.imagePath = `https://unpkg.com/leaflet@${L.version}/dist/images/`;
     addStyle(css);
 
-    const terminal = new Terminal(
-        { position: "bottomleft" },
+    new Navigation(
+        { position: "topleft" },
         {
             inputWaitInterval: 3000,
             locationUpdateWaitInterval: 3000,
+            minAutoSaveHistoryDistance: 1,
         }
     ).addTo(window.map);
-
-    new DropZone(terminal, { position: "bottomleft" }).addTo(window.map);
 }
 export function main() {
     handleAsyncError(asyncMain());
