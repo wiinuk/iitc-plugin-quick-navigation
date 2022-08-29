@@ -19,12 +19,16 @@
 // @match        http://*.ingress.com/mission/*
 // @icon         https://www.google.com/s2/favicons?domain=iitc.me
 // @grant        GM_info
+// @grant        GM_xmlhttpRequest
+// @grant        GM.xmlHttpRequest
+// @connect      geocoding.jp
 // ==/UserScript==
 
 import * as MainModule from "./iitc-plugin-quick-navigation";
 
-window["_iitc-plugin-quick-navigation-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"] =
-    MainModule;
+(unsafeWindow as WindowForContentScope)[
+    "_iitc-plugin-quick-navigation-eda40d4e-89a9-41da-93c3-fbceb60f6a2a"
+] = MainModule;
 
 interface PluginInfo {
     buildName?: string;
@@ -45,6 +49,8 @@ interface SetupHook {
 // 文字列化され、ドキュメントに注入されるラッパー関数
 // このため、通常のクロージャーのルールはここでは適用されない
 function wrapper(plugin_info: PluginInfo) {
+    const window = globalThis.window as WindowForContentScope;
+
     // window.plugin が存在することを確認する
     if (typeof window.plugin !== "function") {
         window.plugin = function () {
@@ -68,7 +74,19 @@ function wrapper(plugin_info: PluginInfo) {
             );
             return;
         }
-        pluginModule.main();
+        if (window.L == null) {
+            console.error(
+                `${plugin_info.pluginId}: Leaflet が読み込まれていません。`
+            );
+            return;
+        }
+        if (window.map == null) {
+            console.error(
+                `${plugin_info.pluginId}: Leaflet map が読み込まれていません。`
+            );
+            return;
+        }
+        pluginModule.main({ L: window.L, map: window.map });
     };
     setup.info = plugin_info;
 
