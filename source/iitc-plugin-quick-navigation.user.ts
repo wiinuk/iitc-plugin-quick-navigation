@@ -6,7 +6,7 @@
 // @downloadURL  https://github.com/wiinuk/iitc-plugin-quick-navigation/raw/master/iitc-plugin-quick-navigation.user.js
 // @updateURL    https://github.com/wiinuk/iitc-plugin-quick-navigation/raw/master/iitc-plugin-quick-navigation.user.js
 // @homepageURL  https://github.com/wiinuk/iitc-plugin-quick-navigation
-// @version      0.2.0
+// @version      0.3.0
 // @description  Add the ability to move to specified coordinates.
 // @author       Wiinuk
 // @include      https://*.ingress.com/intel*
